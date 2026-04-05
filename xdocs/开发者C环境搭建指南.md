@@ -10,7 +10,10 @@
 打开终端，执行：
 
 ```bash
+# 1. 克隆仓库到本地
 git clone https://github.com/Felicity-byte/CareLinkAgent.git
+
+# 2. 进入项目目录
 cd CareLinkAgent
 ```
 
@@ -21,23 +24,36 @@ cd CareLinkAgent
 ### 1. 安装后端依赖
 
 ```bash
+# 进入后端目录
 cd Backend
+
+# 安装Python依赖
 pip install -r requirements.txt
+
+# 返回项目根目录
 cd ..
 ```
 
 ### 2. 安装前端依赖
 
 ```bash
+# 进入前端目录
 cd Frontend
+
+# 安装Node.js依赖
 npm install
+
+# 返回项目根目录
 cd ..
 ```
 
 ### 3. 配置 AI 服务
 
 ```bash
+# 进入AI服务目录
 cd GlmAI
+
+# 复制环境变量配置文件
 copy .env.example .env
 ```
 
@@ -52,7 +68,10 @@ ZHIPU_API_KEY=你的智谱API密钥
 ## 三、创建 Test 分支
 
 ```bash
+# 1. 创建本地 Test 分支
 git checkout -b Test
+
+# 2. 推送 Test 分支到远程仓库并跟踪
 git push -u origin Test
 ```
 
@@ -65,7 +84,10 @@ git push -u origin Test
 新开一个终端窗口，执行：
 
 ```bash
+# 进入AI服务目录
 cd D:\Trea\medical systems\CareLinkAgent\GlmAI
+
+# 启动AI服务
 python connect/server.py
 ```
 
@@ -76,7 +98,10 @@ python connect/server.py
 再新开一个终端窗口，执行：
 
 ```bash
+# 进入测试目录
 cd D:\Trea\medical systems\CareLinkAgent\test\Gtests
+
+# 运行测试脚本
 python test_streaming.py
 ```
 
@@ -87,23 +112,116 @@ python test_streaming.py
 每次测试前，先更新到最新代码：
 
 ```bash
+# 1. 切换到 Test 分支
 git checkout Test
+
+# 2. 拉取远程最新代码
 git pull origin Test
 ```
 
 ---
 
-## 六、测试提示词汇总
+## 六、测试代码管理
 
-详见 [主要测试流程.md](../test/Gtests/主要测试流程.md)
+### 情况一：测试完成，创建 PR
+
+```bash
+# 1. 添加所有修改的文件
+git add .
+
+# 2. 提交并写上描述
+git commit -m "test: 完成XX测试"
+
+# 3. 推送到远程 Test 分支
+git push origin Test
+
+# 4. 在GitHub上创建PR，等待开发者A审核
+```
+
+### 情况二：测试没完成，需要暂存代码
+
+```bash
+# 1. 添加所有修改的文件
+git add .
+
+# 2. 提交（说明正在测试中）
+git commit -m "test: 正在进行XX测试，暂存"
+
+# 3. 推送到远程 Test 分支
+git push origin Test
+
+# 4. 继续测试...
+# 测试完成后，再添加、提交、推送
+```
+
+### 情况三：测试失败，需要修复后重新测试
+
+```bash
+# 1. 修复测试代码...
+# 2. 添加修改
+git add .
+
+# 3. 提交
+git commit -m "test: 修复XX问题"
+
+# 4. 推送
+git push origin Test
+
+# 5. 重新运行测试
+python test_streaming.py
+```
+
+### 情况四：不需要创建 PR，仅暂存进度
+
+```bash
+# 1. 添加修改
+git add .
+
+# 2. 提交（加WIP表示工作进行中）
+git commit -m "WIP: 继续测试XX功能"
+
+# 3. 推送（不创建PR，本地进度保存）
+git push origin Test
+```
 
 ---
 
-## 七、注意事项
+## 七、创建 PR 流程
 
-- 测试结果反馈给开发者 A
-- 不需要直接推送代码到 main，通过 PR 提交
-- 每次测试前先拉取最新代码
+当测试完成后，需要创建 Pull Request：
+
+```bash
+# 1. 确保在 Test 分支上
+git checkout Test
+
+# 2. 拉取最新代码
+git pull origin Test
+
+# 3. 创建 PR 分支（可选，用于组织多个提交）
+git checkout -b pr/Test-测试结果
+
+# 4. 添加所有测试结果文件
+git add .
+
+# 5. 提交
+git commit -m "test: 提交测试结果报告"
+
+# 6. 推送
+git push -u origin pr/Test-测试结果
+
+# 7. 在GitHub上创建Pull Request到Test分支
+```
+
+---
+
+## 八、注意事项
+
+| 情况 | 操作 |
+| --- | --- |
+| 测试完成 | 提交代码 → 推送 → 创建 PR |
+| 测试没完成 | 正常提交暂存进度，不需要特殊处理 |
+| 测试失败 | 修复后重新提交推送，继续测试 |
+| 仅暂存进度 | 提交时加 WIP 标记，push 即可 |
 
 ---
 
