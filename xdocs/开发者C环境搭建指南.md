@@ -1,9 +1,9 @@
 # 开发者 C 环境搭建与测试指南
 
 **项目名称**: CareLinkAgent - 智能医疗预诊系统\
-**仓库地址**: https://github.com/Felicity-byte/CareLinkAgent.git
+**仓库地址**: <https://github.com/Felicity-byte/CareLinkAgent.git>
 
----
+***
 
 ## 一、工作流程图
 
@@ -33,7 +33,7 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
----
+***
 
 ## 二、详细步骤
 
@@ -96,7 +96,10 @@ git push origin Test
 GitHub 仓库 → Compare & pull request → 选择 main ← Test → Create
 ```
 
----
+#### 当正在编写，主干main更新了代码
+
+```
+```
 
 ## 三、日常测试流程
 
@@ -122,18 +125,18 @@ GitHub 仓库 → Compare & pull request → 选择 main ← Test → Create
 └──────────────────────────────────────────────┘
 ```
 
----
+***
 
 ## 四、测试管理情况表
 
-| 情况 | 操作 | 命令 |
-| --- | --- | --- |
-| 测试完成 | 添加 → 提交 → 推送 → PR | `git add .` → `commit` → `push` → GitHub |
-| 测试未完成 | 正常提交暂存 | `git add .` → `commit` → `push` |
-| 测试失败 | 修复后重新测试 | 修复 → `add` → `commit` → `push` |
-| 仅暂存进度 | WIP 提交 | `git commit -m "WIP: ..."` → `push` |
+| 情况    | 操作                | 命令                                       |
+| ----- | ----------------- | ---------------------------------------- |
+| 测试完成  | 添加 → 提交 → 推送 → PR | `git add .` → `commit` → `push` → GitHub |
+| 测试未完成 | 正常提交暂存            | `git add .` → `commit` → `push`          |
+| 测试失败  | 修复后重新测试           | 修复 → `add` → `commit` → `push`           |
+| 仅暂存进度 | WIP 提交            | `git commit -m "WIP: ..."` → `push`      |
 
----
+***
 
 ## 五、注意事项
 
@@ -141,6 +144,6 @@ GitHub 仓库 → Compare & pull request → 选择 main ← Test → Create
 - 不需要推送代码到 main，通过 PR 提交
 - 每次测试前先拉取最新代码
 
----
+***
 
 **更新日期**: 2026-04-05

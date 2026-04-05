@@ -1,9 +1,9 @@
 # 开发者 B 环境搭建与开发指南
 
 **项目名称**: CareLinkAgent - 智能医疗预诊系统\
-**仓库地址**: https://github.com/Felicity-byte/CareLinkAgent.git
+**仓库地址**: <https://github.com/Felicity-byte/CareLinkAgent.git>
 
----
+***
 
 ## 一、工作流程图
 
@@ -33,7 +33,7 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
----
+***
 
 ## 二、详细步骤
 
@@ -94,9 +94,21 @@ git push origin Frontend
 
 ```
 GitHub 仓库 → Compare & pull request → 选择 main ← Frontend → Create
+
 ```
 
----
+#### 当正在编写，主干main更新了代码
+
+```
+# 1. 先暂存当前进度
+git stash
+
+# 2. 拉取最新代码
+git pull origin main
+
+# 3. 恢复进度
+git stash pop
+```
 
 ## 三、日常开发流程
 
@@ -122,17 +134,17 @@ GitHub 仓库 → Compare & pull request → 选择 main ← Frontend → Create
 └──────────────────────────────────────────────┘
 ```
 
----
+***
 
 ## 四、代码管理情况表
 
-| 情况 | 操作 | 命令 |
-| --- | --- | --- |
-| 功能完成 | 添加 → 提交 → 推送 → PR | `git add .` → `commit` → `push` → GitHub |
-| 功能未完成 | 正常提交暂存 | `git add .` → `commit` → `push` |
-| 代码失败 | 修复后重新提交 | `git add .` → `commit` → `push` |
-| 仅暂存进度 | WIP 提交 | `git commit -m "WIP: ..."` → `push` |
+| 情况    | 操作                | 命令                                       |
+| ----- | ----------------- | ---------------------------------------- |
+| 功能完成  | 添加 → 提交 → 推送 → PR | `git add .` → `commit` → `push` → GitHub |
+| 功能未完成 | 正常提交暂存            | `git add .` → `commit` → `push`          |
+| 代码失败  | 修复后重新提交           | `git add .` → `commit` → `push`          |
+| 仅暂存进度 | WIP 提交            | `git commit -m "WIP: ..."` → `push`      |
 
----
+***
 
 **更新日期**: 2026-04-05
