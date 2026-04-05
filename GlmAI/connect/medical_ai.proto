@@ -1,0 +1,129 @@
+syntax = "proto3";
+option java_package = "com.example";
+option objc_class_prefix = "MED";
+option optimize_for = SPEED;
+option cc_enable_arenas = true;
+
+package medical_ai;
+
+// ==========================
+// 术后随访 AI 协同系统接口定义
+// ==========================
+
+// 1. CreateSession - 创建会话
+message CreateSessionRequest {
+  string patient_id = 1;        // 患者ID
+  string patient_name = 2;       // 患者姓名
+  string surgery_date = 3;      // 手术日期 (YYYY-MM-DD)
+}
+
+message CreateSessionResponse {
+  string session_id = 1;        // 会话ID
+  string created_at = 2;        // 创建时间 (ISO 8601)
+  string welcome_message = 3;   // 欢迎语（询问手术类型）
+}
+
+// 2. Chat - 流式对话
+message ChatRequest {
+  string session_id = 1;       // 会话ID
+  string message = 2;          // 患者消息
+  bool is_end = 3;             // 是否结束对话
+}
+
+message ChatResponse {
+  string content = 1;          // AI 回复内容（流式）
+  bool is_final = 2;           // 是否为最终回复
+  string reference = 3;        // RAG 检索参考（可选）
+}
+
+// 3. EndSession - 结束会话，返回病历
+message EndSessionRequest {
+  string session_id = 1;        // 会话ID
+}
+
+message MedicalReport {
+  PatientInfo patient = 1;
+  string chief_complaint = 2;
+  string present_illness = 3;
+  PostSurgeryStatus surgery_status = 4;
+  PastHistory past_history = 5;
+  AIAnalysis ai_analysis = 6;
+  DoctorAdvice doctor_advice = 7;
+  SessionInfo session_info = 8;
+}
+
+message PatientInfo {
+  string name = 1;
+  string gender = 2;
+  int32 age = 3;
+  string surgery_type = 4;
+  string surgery_date = 5;
+  string doctor_name = 6;
+}
+
+message PostSurgeryStatus {
+  string wound_healing = 1;
+  string temperature = 2;
+  string appetite = 3;
+  string activity = 4;
+}
+
+message PastHistory {
+  string allergy = 1;
+  string chronic_disease = 2;
+  string medication = 3;
+}
+
+message AIAnalysis {
+  string health_advice = 1;
+  bool alert_flag = 2;
+  string alert_reason = 3;
+}
+
+message DoctorAdvice {
+  string medical_advice = 1;
+  string followup_items = 2;
+  string next_visit_date = 3;
+  bool need_followup = 4;
+}
+
+message SessionInfo {
+  int32 conversation_rounds = 1;
+  string submitted_at = 2;
+}
+
+message EndSessionResponse {
+  MedicalReport report = 1;
+  string status = 2;
+}
+
+// 4. GetSessionHistory - 获取对话历史
+message GetSessionHistoryRequest {
+  string session_id = 1;
+}
+
+message GetSessionHistoryResponse {
+  string session_id = 1;
+  string surgery_type = 2;
+  repeated ChatMessage messages = 3;
+  string created_at = 4;
+  string ended_at = 5;
+  string status = 6;
+}
+
+message ChatMessage {
+  string role = 1;             // "patient" 或 "ai"
+  string content = 2;
+  string timestamp = 3;
+}
+
+// 5. 服务定义
+service PostSurgeryFollowUpService {
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  
+  rpc Chat(stream ChatRequest) returns (stream ChatResponse);
+  
+  rpc EndSession(EndSessionRequest) returns (EndSessionResponse);
+  
+  rpc GetSessionHistory(GetSessionHistoryRequest) returns (GetSessionHistoryResponse);
+}
