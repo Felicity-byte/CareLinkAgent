@@ -192,7 +192,50 @@ git push origin Frontend
 
 ---
 
-## 七、注意事项
+## 七、同步与推送
+
+### 推送代码到远程
+
+```bash
+# 1. 添加所有修改的文件
+git add .
+
+# 2. 提交并写上描述
+git commit -m "feat: 描述"
+
+# 3. 推送到远程 Frontend 分支
+git push origin Frontend
+```
+
+### 同步远程最新代码
+
+```bash
+# 1. 切换到 Frontend 分支
+git checkout Frontend
+
+# 2. 拉取远程最新代码
+git pull origin Frontend
+```
+
+### 创建 PR 合并到 main
+
+```bash
+# 1. 确保在 Frontend 分支且代码已推送
+git checkout Frontend
+git push origin Frontend
+
+# 2. 在GitHub上操作：
+#    打开 https://github.com/Felicity-byte/CareLinkAgent
+#    点击 "Compare & pull request"
+#    选择 base: main ← head: Frontend
+#    填写描述，点击 "Create pull request"
+
+# 3. 等待开发者A审核合并
+```
+
+---
+
+## 八、注意事项
 
 | 情况 | 操作 |
 | --- | --- |

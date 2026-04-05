@@ -147,15 +147,58 @@ git push origin Test
 
 ***
 
+## 七、同步与推送
+
+### 推送代码到远程
+
+```bash
+# 1. 添加所有修改的文件
+git add .
+
+# 2. 提交并写上描述
+git commit -m "test: 描述"
+
+# 3. 推送到远程 Test 分支
+git push origin Test
+```
+
+### 同步远程最新代码
+
+```bash
+# 1. 切换到 Test 分支
+git checkout Test
+
+# 2. 拉取远程最新代码
+git pull origin Test
+```
+
+### 创建 PR 合并到 main
+
+```bash
+# 1. 确保在 Test 分支且代码已推送
+git checkout Test
+git push origin Test
+
+# 2. 在GitHub上操作：
+#    打开 https://github.com/Felicity-byte/CareLinkAgent
+#    点击 "Compare & pull request"
+#    选择 base: main ← head: Test
+#    填写描述，点击 "Create pull request"
+
+# 3. 等待开发者A审核合并
+```
+
+---
+
 ## 八、注意事项
 
-| 情况    | 操作                  |
-| ----- | ------------------- |
-| 测试完成  | 提交代码 → 推送 → 创建 PR   |
-| 测试没完成 | 正常提交暂存进度，不需要特殊处理    |
-| 测试失败  | 修复后重新提交推送，继续测试      |
+| 情况 | 操作 |
+| --- | --- |
+| 测试完成 | 提交代码 → 推送 → 创建 PR |
+| 测试没完成 | 正常提交暂存进度，不需要特殊处理 |
+| 测试失败 | 修复后重新提交推送，继续测试 |
 | 仅暂存进度 | 提交时加 WIP 标记，push 即可 |
 
-***
+---
 
 **更新日期**: 2026-04-05
