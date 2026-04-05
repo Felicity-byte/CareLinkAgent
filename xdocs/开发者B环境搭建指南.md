@@ -1,195 +1,206 @@
-# 开发者B环境搭建指南
+# 开发者 B 环境搭建与测试指南
+
+**项目名称**: CareLinkAgent - 智能医疗预诊系统\
+**仓库地址**: https://github.com/Felicity-byte/CareLinkAgent.git
 
 ---
 
-## 一、安装软件
+## 一、克隆项目
 
-### 1. Node.js
-
-1. 访问 https://nodejs.org
-2. 下载 **LTS版本**（推荐）
-3. 双击安装，一路下一步
-4. 验证安装：
-   ```bash
-   node -v
-   npm -v
-   ```
-
-### 2. Python
-
-1. 访问 https://python.org/downloads/
-2. 下载 **Python 3.8+**
-3. 安装时勾选 **Add Python to PATH**
-4. 验证安装：
-   ```bash
-   python --version
-   pip --version
-   ```
-
-### 3. MySQL
-
-1. 访问 https://dev.mysql.com/downloads/mysql/
-2. 下载 **MySQL Community Server**
-3. 安装时设置root密码（记住这个密码）
-4. 验证安装：
-   ```bash
-   mysql -u root -p
-   ```
-
-### 4. Git
-
-1. 访问 https://git-scm.com/downloads
-2. 下载并安装
-3. 配置用户信息：
-   ```bash
-   git config --global user.name "你的名字"
-   git config --global user.email "你的GitHub邮箱"
-   ```
-
----
-
-## 二、克隆项目
+打开终端，执行：
 
 ```bash
-git clone https://github.com/Felicity-byte/-.git
-cd -
+# 1. 克隆仓库到本地
+git clone https://github.com/Felicity-byte/CareLinkAgent.git
+
+# 2. 进入项目目录
+cd CareLinkAgent
 ```
 
 ---
 
-## 三、配置数据库
+## 二、配置环境
 
-### 方法一：命令行
-
-```bash
-# 登录MySQL
-mysql -u root -p
-# 输入密码
-
-# 创建数据库
-CREATE DATABASE medimeow_db;
-
-# 退出
-exit;
-```
-
-### 方法二：MySQL Workbench（图形界面）
-
-1. 打开 MySQL Workbench
-2. 连接到本地MySQL
-3. 执行SQL：
-   ```sql
-   CREATE DATABASE medimeow_db;
-   ```
-
----
-
-## 四、配置后端
+### 1. 安装后端依赖
 
 ```bash
-# 进入Backend目录
+# 进入后端目录
 cd Backend
 
-# 创建虚拟环境
-python -m venv venv
-
-# 激活虚拟环境
-venv\Scripts\activate
-
-# 安装依赖
+# 安装Python依赖
 pip install -r requirements.txt
 
-# 复制环境配置文件
+# 返回项目根目录
+cd ..
+```
+
+### 2. 安装前端依赖
+
+```bash
+# 进入前端目录
+cd Frontend
+
+# 安装Node.js依赖
+npm install
+
+# 返回项目根目录
+cd ..
+```
+
+### 3. 配置 AI 服务
+
+```bash
+# 进入AI服务目录
+cd GlmAI
+
+# 复制环境变量配置文件
 copy .env.example .env
 ```
 
-### 编辑 .env 文件
+用记事本或 VS Code 打开 `.env` 文件，填入智谱 API 密钥：
 
-用记事本或VS Code打开 `Backend\.env`，修改：
-
-```env
-# Database (MySQL)
-DATABASE_URL=mysql+pymysql://root:你的MySQL密码@localhost:3306/medimeow_db
-
-# JWT
-SECRET_KEY=随便写一串字符
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-
-# File Upload
-UPLOAD_DIR=./uploads
-MAX_FILE_SIZE=10485760
-
-# CORS
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+```
+ZHIPU_API_KEY=你的智谱API密钥
 ```
 
 ---
 
-## 五、配置前端
+## 三、创建 Frontend 分支
 
 ```bash
-# 进入Frontend目录
-cd ..\Frontend
+# 1. 创建本地 Frontend 分支
+git checkout -b Frontend
 
-# 安装依赖
-npm install
+# 2. 推送 Frontend 分支到远程仓库并跟踪
+git push -u origin Frontend
 ```
 
 ---
 
-## 六、启动服务
+## 四、开始开发
 
-### 启动后端
+### 1. 启动后端服务
+
+新开一个终端窗口，执行：
 
 ```bash
-# 在Backend目录
-cd ..\Backend
-venv\Scripts\activate
+# 进入后端目录
+cd D:\Trea\medical systems\CareLinkAgent\Backend
+
+# 启动后端服务
 uvicorn main:app --reload
 ```
 
-看到 `Application startup complete` 表示成功。
+等待看到 `Application startup complete` 表示成功。
 
-### 启动前端（新终端）
+### 2. 启动前端服务
+
+再新开一个终端窗口，执行：
 
 ```bash
-# 在Frontend目录
-cd Frontend
+# 进入前端目录
+cd D:\Trea\medical systems\CareLinkAgent\Frontend
+
+# 启动前端服务
 npm run dev
 ```
 
-看到 `Local: http://localhost:5173/` 表示成功。
+等待看到 `Local: http://localhost:5173/` 表示成功。
 
 ---
 
-## 七、验证
+## 五、日常更新
 
-- 后端API文档：http://localhost:8000/docs
-- 前端页面：http://localhost:5173
-
----
-
-## 常见问题
-
-### pip安装慢
+每次开发前，先更新到最新代码：
 
 ```bash
-pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 1. 切换到 Frontend 分支
+git checkout Frontend
+
+# 2. 拉取远程最新代码
+git pull origin Frontend
 ```
-
-### npm安装慢
-
-```bash
-npm install --registry=https://registry.npmmirror.com
-```
-
-### MySQL连接失败
-
-1. 确认MySQL服务已启动
-2. 确认密码正确
-3. 确认数据库 `medimeow_db` 已创建
 
 ---
 
-**更新日期**: 2026-04-04
+## 六、开发代码管理
+
+### 情况一：功能开发完成，创建 PR
+
+```bash
+# 1. 添加所有修改的文件
+git add .
+
+# 2. 提交并写上描述
+git commit -m "feat: 完成XX功能"
+
+# 3. 推送到远程 Frontend 分支
+git push origin Frontend
+
+# 4. 在GitHub上创建PR，等待开发者A审核
+# 1. 打开 https://github.com/Felicity-byte/CareLinkAgent
+# 2. 点击 "Compare & pull request"
+# 3. 选择 base: main ← head: Frontend
+# 4. 填写描述，点击 "Create pull request"
+# 5. 等待开发者A审核
+```
+
+### 情况二：功能没完成，需要暂存代码
+
+```bash
+# 1. 添加所有修改的文件
+git add .
+
+# 2. 提交（说明正在开发中）
+git commit -m "feat: 正在进行XX功能开发，暂存"
+
+# 3. 推送到远程 Frontend 分支
+git push origin Frontend
+
+# 4. 继续开发...
+# 开发完成后，再添加、提交、推送
+```
+
+### 情况三：功能开发失败，需要修复后重新开发
+
+```bash
+# 1. 修复代码...
+# 2. 添加修改
+git add .
+
+# 3. 提交
+git commit -m "feat: 修复XX问题"
+
+# 4. 推送
+git push origin Frontend
+
+# 5. 继续开发
+```
+
+### 情况四：不需要创建 PR，仅暂存进度
+
+```bash
+# 1. 添加修改
+git add .
+
+# 2. 提交（加WIP表示工作进行中）
+git commit -m "WIP: 继续开发XX功能"
+
+# 3. 推送（不创建PR，本地进度保存）
+git push origin Frontend
+```
+
+---
+
+## 七、注意事项
+
+| 情况 | 操作 |
+| --- | --- |
+| 功能完成 | 提交代码 → 推送 → 创建 PR |
+| 功能没完成 | 正常提交暂存进度，不需要特殊处理 |
+| 功能失败 | 修复后重新提交推送，继续开发 |
+| 仅暂存进度 | 提交时加 WIP 标记，push 即可 |
+
+---
+
+**更新日期**: 2026-04-05
