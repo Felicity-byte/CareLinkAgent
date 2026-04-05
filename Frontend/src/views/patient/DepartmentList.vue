@@ -1,12 +1,12 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { Icon } from '@iconify/vue'
+import { useRouter, useRoute } from 'vue-router'
 import request from '../../api/request'
 
 import { useAuthStore } from '../../stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const departments = ref([])
 const loading = ref(true)
@@ -15,7 +15,7 @@ const error = ref(null)
 const fetchDepartments = async () => {
     loading.value = true
     try {
-        const res = await request.get('/departments')
+        const res = await request.get('/department')
         departments.value = res.data
     } catch (err) {
         console.error('Fetch departments failed', err)
@@ -26,12 +26,9 @@ const fetchDepartments = async () => {
 }
 
 const selectDepartment = (deptId) => {
-    // Check if user has completed real name verification
-    // Default username is "默认用户{phone}" - not considered verified
     const user = authStore.user
     console.log('Checking user for real name verification:', user)
     
-    // User hasn't verified if username starts with "默认用户"
     const isDefaultUser = user?.username?.startsWith('默认用户')
     
     if (isDefaultUser || !user?.username) {
@@ -40,7 +37,13 @@ const selectDepartment = (deptId) => {
         }
         return
     }
-    router.push({ name: 'questionnaire', params: { deptId } })
+    
+    const mode = route.query.mode || 'chat'
+    if (mode === 'chat') {
+        router.push({ name: 'ai-chat', params: { deptId } })
+    } else {
+        router.push({ name: 'questionnaire', params: { deptId } })
+    }
 }
 
 onMounted(() => {
@@ -50,11 +53,10 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen bg-gray-50 pb-12">
-    <!-- Header -->
     <div class="bg-white shadow sticky top-0 z-10">
         <div class="max-w-3xl mx-auto px-4 py-4 flex items-center">
             <button @click="router.back()" class="mr-4 text-gray-600 hover:text-gray-900">
-                <Icon icon="mdi:arrow-left" class="text-2xl" />
+                <el-icon class="text-2xl"><ArrowLeft /></el-icon>
             </button>
             <h1 class="text-lg font-bold">选择科室</h1>
         </div>
@@ -62,12 +64,12 @@ onMounted(() => {
 
     <div class="max-w-3xl mx-auto px-4 mt-6">
         <div v-if="loading" class="text-center py-20">
-            <Icon icon="mdi:loading" class="animate-spin text-4xl text-green-600 mx-auto" />
+            <el-icon class="animate-spin text-4xl text-green-600 mx-auto"><Loading /></el-icon>
             <p class="mt-4 text-gray-500">正在加载科室...</p>
         </div>
 
         <div v-else-if="error" class="text-center py-20">
-            <Icon icon="mdi:alert-circle" class="text-4xl text-red-500 mx-auto" />
+            <el-icon class="text-4xl text-red-500 mx-auto"><WarningFilled /></el-icon>
             <p class="mt-4 text-gray-600">{{ error }}</p>
             <button @click="fetchDepartments" class="mt-4 text-green-600 font-bold hover:underline">重试</button>
         </div>
@@ -80,13 +82,13 @@ onMounted(() => {
                 class="bg-white p-6 rounded-xl shadow-sm border border-transparent hover:border-green-500 hover:shadow-md cursor-pointer transition flex items-center"
             >
                 <div class="w-12 h-12 rounded-full bg-green-100 text-green-600 flex items-center justify-center mr-4">
-                    <Icon icon="mdi:doctor" class="text-2xl" />
+                    <el-icon class="text-2xl"><UserFilled /></el-icon>
                 </div>
                 <div>
                     <h3 class="font-bold text-lg text-gray-800">{{ dept.department_name }}</h3>
                     <p class="text-sm text-gray-500">点击进入智能问诊</p>
                 </div>
-                <Icon icon="mdi:chevron-right" class="ml-auto text-gray-300 text-xl" />
+                <el-icon class="ml-auto text-gray-300 text-xl"><ArrowRight /></el-icon>
             </div>
         </div>
     </div>

@@ -2,7 +2,6 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePatientStore } from '../stores/patient'
-import { Icon } from '@iconify/vue'
 import Sidebar from '../components/Sidebar.vue'
 import TopBar from '../components/TopBar.vue'
 
@@ -14,13 +13,10 @@ const statusFilter = ref('全部状态')
 
 const filteredPatients = computed(() => {
   return patientStore.patients.filter(patient => {
-    // Search filter
     const search = searchTerm.value.toLowerCase()
     const nameMatch = patient.user?.username?.toLowerCase().includes(search)
     const phoneMatch = patient.user?.phone_number?.includes(search)
     
-    // Status filter (Mock logic as backend doesn't return status in summary yet, assuming all in queue are 'waiting')
-    // We can infer urgency or status if we had that data. For now, just pass through or simulate.
     const statusMatch = statusFilter.value === '全部状态' || true 
     
     return (nameMatch || phoneMatch) && statusMatch
@@ -31,20 +27,16 @@ const maskName = (name) => {
     if (!name) return '未知'
     if (name.length <= 1) return '*'
     if (name.length === 2) return name[0] + '*'
-    // For > 2 chars, keep first and last, mask middle
     return name[0] + '*'.repeat(name.length - 2) + name[name.length - 1]
 }
 
 const maskPhone = (phone) => {
     if (!phone) return '-'
     if (phone.length < 4) return phone 
-    // Keep last 4, mask everything before
     return '*'.repeat(phone.length - 4) + phone.slice(-4)
 }
 
 const getStatusClass = (patient) => {
-    // Mock random status for demo purposes since backend doesn't provide it in summary
-    // In real app, `patient.status` would come from API
     return 'status-stable'
 }
 
@@ -72,12 +64,11 @@ onMounted(() => {
       </TopBar>
       
       <div class="content-wrap">
-        <!-- Search & Filter -->
         <div class="card mb-6">
           <div class="flex flex-wrap items-center gap-4">
             <div class="flex-1">
               <div class="relative">
-                <Icon icon="mdi:magnify" class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-xl" />
+                <el-icon class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-xl"><Search /></el-icon>
                 <input 
                   v-model="searchTerm"
                   type="text" 
@@ -99,14 +90,13 @@ onMounted(() => {
                 class="px-4 py-3 bg-blue-100 text-blue-700 rounded-lg font-medium flex items-center hover:bg-blue-200 transition"
                 @click="patientStore.fetchQueue()"
               >
-                <Icon icon="mdi:refresh" class="mr-2" :class="{ 'animate-spin': patientStore.loading }" />
+                <el-icon class="mr-2" :class="{ 'animate-spin': patientStore.loading }"><Refresh /></el-icon>
                 刷新列表
               </button>
             </div>
           </div>
         </div>
         
-        <!-- List -->
         <div class="card">
           <div class="flex justify-between items-center mb-6">
             <h3 class="text-lg font-semibold text-gray-800">患者列表</h3>
@@ -114,12 +104,12 @@ onMounted(() => {
           </div>
           
           <div v-if="patientStore.loading && patientStore.patients.length === 0" class="p-8 text-center text-gray-500">
-            <Icon icon="mdi:loading" class="animate-spin text-3xl mx-auto mb-2" />
+            <el-icon class="animate-spin text-3xl mx-auto mb-2"><Loading /></el-icon>
             <p>正在加载患者数据...</p>
           </div>
           
           <div v-else-if="filteredPatients.length === 0" class="p-8 text-center text-gray-500">
-             <Icon icon="mdi:clipboard-text-off-outline" class="text-4xl mx-auto mb-2 opacity-50" />
+             <el-icon class="text-4xl mx-auto mb-2 opacity-50"><Document /></el-icon>
              <p>暂无待诊患者</p>
           </div>
           
@@ -140,7 +130,7 @@ onMounted(() => {
                   <td>
                     <div class="flex items-center">
                       <div class="mr-3 bg-blue-100 rounded-full w-8 h-8 flex items-center justify-center text-blue-600">
-                        <Icon icon="mdi:account" />
+                        <el-icon><User /></el-icon>
                       </div>
                       <div class="font-medium">{{ maskName(patient.user?.username) }}</div>
                     </div>
@@ -154,7 +144,7 @@ onMounted(() => {
                   <td>{{ patient.time || '-' }}</td>
                   <td>
                     <span class="status-badge" :class="getStatusClass(patient)">
-                      <Icon icon="mdi:clock-outline" class="mr-1 align-middle inline" />
+                      <el-icon class="mr-1 align-middle inline"><Clock /></el-icon>
                       {{ getStatusLabel(patient) }}
                     </span>
                   </td>
@@ -164,7 +154,7 @@ onMounted(() => {
                         @click="goToDetail(patient.record_id)"
                         class="text-blue-600 hover:text-blue-800 font-medium flex items-center"
                     >
-                      接诊 <Icon icon="mdi:arrow-right" class="ml-1" />
+                      接诊 <el-icon class="ml-1"><ArrowRight /></el-icon>
                     </button>
                   </td>
                 </tr>
@@ -172,7 +162,6 @@ onMounted(() => {
             </table>
           </div>
           
-          <!-- Pagination UI (Static for now) -->
           <div v-if="filteredPatients.length > 0" class="mt-8 flex justify-between items-center text-sm text-gray-500">
             <div>显示 {{ filteredPatients.length }} 条记录</div>
             <div class="flex space-x-2">

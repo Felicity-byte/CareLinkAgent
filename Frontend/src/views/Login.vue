@@ -2,7 +2,6 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { Icon } from '@iconify/vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -38,7 +37,7 @@ const handleLogin = async () => {
   <div class="login-container">
     <div class="login-card">
       <div class="login-header">
-        <Icon icon="mdi:doctor" class="header-icon" />
+        <el-icon class="header-icon"><UserFilled /></el-icon>
         <h1 class="text-2xl font-bold mt-4">医智 MedMind</h1>
         <p class="opacity-90 mt-2">安全登录您的专业医疗辅助平台</p>
       </div>
@@ -83,7 +82,7 @@ const handleLogin = async () => {
         </button>
         
         <div class="mt-6 text-center text-gray-500 text-sm flex justify-center items-center">
-          <Icon icon="mdi:shield-check" class="mr-1 inline-block" />
+          <el-icon class="mr-1 inline-block"><Shield /></el-icon>
           医疗数据安全加密保障
         </div>
       </div>

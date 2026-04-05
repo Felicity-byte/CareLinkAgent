@@ -2,7 +2,6 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
-import { Icon } from '@iconify/vue'
 import request from '../../api/request'
 
 const router = useRouter()
@@ -20,7 +19,6 @@ const loading = ref(false)
 const errorMsg = ref('')
 
 const handleBind = async () => {
-    // Basic validation
     if (!form.value.username || !form.value.birth || !form.value.origin) {
         errorMsg.value = '请填写完整信息'
         return
@@ -30,8 +28,6 @@ const handleBind = async () => {
     errorMsg.value = ''
 
     try {
-        // POST /user/bind
-        // Converting to Form Data for consistency with Register/Login
         const params = new URLSearchParams()
         params.append('username', form.value.username)
         params.append('gender', form.value.gender)
@@ -43,15 +39,12 @@ const handleBind = async () => {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         })
         
-        // On success, refresh user info or manually update store
-        // We'll fetch updated info to be safe
         try {
            const res = await request.get('/user/info')
            authStore.user = res.data
            localStorage.setItem('user', JSON.stringify(res.data))
         } catch (e) {
            console.warn('Failed to refresh user info', e)
-           // If fetch fails, at least update the username locally so UI looks okay
            authStore.user.username = form.value.username
            localStorage.setItem('user', JSON.stringify(authStore.user))
         }
@@ -70,7 +63,7 @@ const handleBind = async () => {
   <div class="bind-container">
     <div class="bind-card">
         <div class="bind-header bg-green-600">
-            <Icon icon="mdi:card-account-details" class="text-4xl" />
+            <el-icon class="text-4xl"><Postcard /></el-icon>
             <h1 class="text-xl font-bold mt-2">完善实名信息</h1>
         </div>
 

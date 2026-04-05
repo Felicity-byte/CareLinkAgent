@@ -2,7 +2,6 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePatientStore } from '../stores/patient'
-import { Icon } from '@iconify/vue'
 import Sidebar from '../components/Sidebar.vue'
 import TopBar from '../components/TopBar.vue'
 import request from '../api/request'
@@ -23,13 +22,11 @@ const userInfo = computed(() => patientData.value?.user || {})
 const fetchDetail = async () => {
     loading.value = true
     try {
-        // Try to find in store first, otherwise fetch
         const existing = patientStore.patients.find(p => p.record_id === recordId)
         if (existing) {
             patientData.value = existing
         } else {
             const res = await request.get(`/doctor/summary/${recordId}`)
-            // API returns {base: {...}, data: {...}}, extract the inner data
             patientData.value = res.data?.data || res.data
         }
     } catch (err) {
@@ -58,23 +55,16 @@ const handleSubmit = async () => {
 
 
 
-// Enhanced Markdown Formatter for structured_report
 const formatMarkdown = (text) => {
     if (!text) return ''
     let html = text
-    // Headers
     html = html.replace(/### (\d+)\. 【(.*)】/g, '<h3 class="text-lg font-bold mt-6 mb-3 text-blue-800 border-b border-blue-200 pb-2">$1. $2</h3>')
     html = html.replace(/### (.*)/g, '<h3 class="text-lg font-bold mt-4 mb-2 text-gray-800">$1</h3>')
-    // Bold
     html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="text-gray-900">$1</strong>')
-    // List items
     html = html.replace(/^\* (.*)/gm, '<li class="ml-6 mb-1 list-disc text-gray-700">$1</li>')
-    // Wrap consecutive li elements in ul
     html = html.replace(/(<li[^>]*>.*?<\/li>\s*)+/gs, '<ul class="my-2">$&</ul>')
-    // Line breaks
     html = html.replace(/\n\n/g, '</p><p class="my-3">')
     html = html.replace(/\n/g, '<br>')
-    // Wrap in paragraph
     html = '<p class="my-3">' + html + '</p>'
     return html
 }
@@ -92,7 +82,7 @@ onMounted(() => {
           <template #title>
              <div class="flex items-center">
                  <button @click="router.back()" class="mr-4 hover:bg-gray-100 p-1 rounded">
-                     <Icon icon="mdi:arrow-left" />
+                     <el-icon><ArrowLeft /></el-icon>
                  </button>
                  <span>病历详情</span>
              </div>
@@ -100,20 +90,17 @@ onMounted(() => {
       </TopBar>
       
       <div v-if="loading" class="flex justify-center items-center h-full">
-          <Icon icon="mdi:loading" class="animate-spin text-4xl text-blue-600" />
+          <el-icon class="animate-spin text-4xl text-blue-600"><Loading /></el-icon>
       </div>
       
       <div v-else-if="patientData" class="content-wrap">
-          <!-- Left: AI Analysis Only -->
           <div class="left-column">
               
-              <!-- AI Analysis -->
               <div class="card">
                   <div class="card-header blue-header flex justify-between items-center">
-                      <span><Icon icon="mdi:robot" class="inline mr-2" /> AI 辅助诊断分析 </span>
+                      <span><el-icon class="inline mr-2"><Monitor /></el-icon> AI 辅助诊断分析 </span>
                   </div>
                   <div class="p-6">
-                      <!-- Structured Report -->
                       <div v-if="aiSummary?.structured_report" class="prose max-w-none" v-html="formatMarkdown(aiSummary.structured_report)">
                       </div>
 
@@ -125,7 +112,6 @@ onMounted(() => {
               
           </div>
           
-          <!-- Right: Doctor Action -->
           <div class="right-column">
               <div class="card h-full flex flex-col">
                   <div class="card-header">医生诊断</div>
@@ -141,7 +127,7 @@ onMounted(() => {
                         :disabled="submitting || !diagnosisText.trim()"
                         class="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition disabled:opacity-50"
                       >
-                          <Icon icon="mdi:check-circle" class="inline mr-2" />
+                          <el-icon class="inline mr-2"><CircleCheck /></el-icon>
                           提交诊断结果
                       </button>
                   </div>
@@ -156,14 +142,14 @@ onMounted(() => {
 .app-container {
   display: flex;
   height: 100vh;
-  overflow: hidden; /* Prevent body scroll */
+  overflow: hidden;
   background: #F8FAFC;
 }
 .main-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  height: 100vh; /* Ensure full height */
+  height: 100vh;
   overflow: hidden;
 }
 .content-wrap {
@@ -171,8 +157,8 @@ onMounted(() => {
   flex: 1;
   display: flex;
   gap: 24px;
-  overflow: hidden; /* Lock this container */
-  height: 100%; /* Take remaining height from main-content */
+  overflow: hidden;
+  height: 100%;
 }
 .left-column {
   flex: 2;

@@ -1,17 +1,16 @@
 <script setup>
-import { Icon } from '@iconify/vue'
 </script>
 
 <template>
   <div class="sidebar">
     <div class="px-4 py-6 text-center">
-      <Icon icon="mdi:doctor" class="text-3xl mx-auto" />
+      <el-icon class="text-3xl mx-auto"><UserFilled /></el-icon>
       <h1 class="text-xl font-bold mt-4">医生工作站</h1>
     </div>
     
     <nav class="mt-8">
       <router-link to="/doctor/dashboard" class="nav-link block py-3 px-6 hover:bg-gray-700 flex items-center" active-class="active">
-        <Icon icon="mdi:card-account-details" class="mr-3 text-xl" /> 病历详情
+        <el-icon class="mr-3 text-xl"><Postcard /></el-icon> 病历详情
       </router-link>
     </nav>
   </div>
