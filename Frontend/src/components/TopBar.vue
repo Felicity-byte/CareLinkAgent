@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
-import { Icon } from '@iconify/vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -26,16 +25,16 @@ const handleLogout = () => {
     
     <div class="flex items-center space-x-5">
       <div class="relative cursor-pointer hover:bg-gray-100 p-2 rounded-full">
-        <Icon icon="mdi:bell-outline" class="text-xl text-gray-500" />
+        <el-icon class="text-xl text-gray-500"><Bell /></el-icon>
         <span class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
       </div>
       
       <div class="flex items-center cursor-pointer hover:bg-gray-50 p-2 rounded-lg" @click="handleLogout" title="点击退出登录">
-        <Icon icon="mdi:account-circle" class="mr-2 text-gray-500 text-2xl" />
+        <el-icon class="mr-2 text-gray-500 text-2xl"><Avatar /></el-icon>
         <span class="font-medium text-gray-700">{{ doctorName }}</span>
         <span class="mx-3 text-gray-300">|</span>
         <span class="text-gray-500 text-sm">{{ departmentName }}</span>
-        <Icon icon="mdi:logout" class="ml-2 text-gray-400 hover:text-red-500" />
+        <el-icon class="ml-2 text-gray-400 hover:text-red-500"><SwitchButton /></el-icon>
       </div>
     </div>
   </div>

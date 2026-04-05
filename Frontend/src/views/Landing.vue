@@ -1,6 +1,5 @@
 <script setup>
 import { useRouter } from 'vue-router'
-import { Icon } from '@iconify/vue'
 
 const router = useRouter()
 </script>
@@ -9,26 +8,24 @@ const router = useRouter()
   <div class="landing-container">
     <div class="content-box text-center">
       <div class="mb-8">
-        <Icon icon="mdi:medical-bag" class="text-6xl text-blue-600 mx-auto" />
+        <el-icon class="text-6xl text-blue-600 mx-auto"><FirstAidKit /></el-icon>
         <h1 class="text-4xl font-bold mt-4 text-gray-800">医智 MedMind</h1>
         <p class="text-xl text-gray-600 mt-2">智能医疗辅助决策系统</p>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12">
-        <!-- Patient Entrance -->
         <div class="role-card" @click="router.push({ name: 'patient-login' })">
           <div class="icon-wrapper bg-green-100 text-green-600">
-            <Icon icon="mdi:account" class="text-4xl" />
+            <el-icon class="text-4xl"><User /></el-icon>
           </div>
           <h2 class="text-2xl font-semibold mt-4">我是患者</h2>
           <p class="text-gray-500 mt-2">在线问诊 · 智能预检 · 健康档案</p>
           <button class="mt-6 btn-outline-green">进入患者端</button>
         </div>
 
-        <!-- Doctor Entrance -->
         <div class="role-card" @click="router.push({ name: 'doctor-login' })">
           <div class="icon-wrapper bg-blue-100 text-blue-600">
-            <Icon icon="mdi:doctor" class="text-4xl" />
+            <el-icon class="text-4xl"><UserFilled /></el-icon>
           </div>
           <h2 class="text-2xl font-semibold mt-4">我是医生</h2>
           <p class="text-gray-500 mt-2">患者管理 · 辅助诊断 · 病历处理</p>

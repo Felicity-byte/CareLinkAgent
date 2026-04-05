@@ -74,6 +74,18 @@ const router = createRouter({
             component: () => import('../views/patient/Questionnaire.vue'),
             meta: { requiresAuth: true, role: 'patient' }
         },
+        {
+            path: '/patient/chat',
+            name: 'ai-chat',
+            component: () => import('../views/patient/Chat.vue'),
+            meta: { requiresAuth: true, role: 'patient' }
+        },
+        {
+            path: '/patient/appointment',
+            name: 'patient-appointment',
+            component: () => import('../views/patient/Appointment.vue'),
+            meta: { requiresAuth: true, role: 'patient' }
+        },
         // Redirect
         {
             path: '/:pathMatch(.*)*',

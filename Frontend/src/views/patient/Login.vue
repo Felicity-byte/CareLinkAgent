@@ -1,8 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '../../stores/auth' // Need to update auth to handle patient login or generic login
-import { Icon } from '@iconify/vue'
+import { useAuthStore } from '../../stores/auth'
 import request from '../../api/request'
 
 const router = useRouter()
@@ -23,7 +22,6 @@ const handleLogin = async () => {
     errorMsg.value = ''
 
     try {
-        // Doc says Body, fetch test confirmed Form Data works.
         const params = new URLSearchParams()
         params.append('phone_number', phone.value)
         params.append('password', password.value)
@@ -36,7 +34,6 @@ const handleLogin = async () => {
         localStorage.setItem('role', 'patient')
         authStore.role = 'patient'
         
-        // Fetch full user info (login response doesn't include birth/gender/etc)
         try {
             const infoRes = await request.get('/user/info')
             const userInfo = infoRes.data?.data || infoRes.data
@@ -62,7 +59,7 @@ const handleLogin = async () => {
   <div class="login-container">
     <div class="login-card">
       <div class="login-header bg-green-600">
-        <Icon icon="mdi:account" class="header-icon" />
+        <el-icon class="header-icon"><User /></el-icon>
         <h1 class="text-2xl font-bold mt-4">患者登录</h1>
         <p class="opacity-90 mt-2">MediMeow 智能医疗</p>
       </div>
@@ -118,9 +115,8 @@ const handleLogin = async () => {
 </template>
 
 <style scoped>
-/* Reuse styles from Doctor login but override colors where needed */
 .login-container {
-  background: #F0FDF4; /* Light green bg */
+  background: #F0FDF4;
   min-height: 100vh;
   width: 100vw;
   display: flex;

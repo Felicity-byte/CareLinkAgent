@@ -1,7 +1,6 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Icon } from '@iconify/vue'
 import request from '../../api/request'
 
 const router = useRouter()
@@ -32,7 +31,6 @@ const handleRegister = async () => {
     errorMsg.value = ''
 
     try {
-        // Doc says Body, fetch test confirmed Form Data (x-www-form-urlencoded) works.
         const params = new URLSearchParams()
         params.append('phone_number', phone.value)
         params.append('password', password.value)
@@ -53,7 +51,7 @@ const handleRegister = async () => {
   <div class="login-container">
     <div class="login-card">
       <div class="login-header bg-green-600">
-        <Icon icon="mdi:account-plus" class="header-icon" />
+        <el-icon class="header-icon"><UserFilled /></el-icon>
         <h1 class="text-2xl font-bold mt-4">用户注册</h1>
       </div>
       

@@ -2,7 +2,6 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
-import { Icon } from '@iconify/vue'
 import request from '../../api/request'
 
 const router = useRouter()
@@ -12,16 +11,17 @@ const historyRecords = ref([])
 const loading = ref(false)
 
 const departments = [
-    { id: '1', name: '全科', icon: 'mdi:doctor' }, // Mocking Departments for now, ideally fetch from backend
+    { id: '1', name: '全科', icon: 'User' },
 ]
 
 const fetchRecords = async () => {
     loading.value = true
     try {
-        const res = await request.get('/questionnaires/submit') // This gets history
-        historyRecords.value = res.data.records
+        const res = await request.get('/questionnaires/submit')
+        historyRecords.value = res.data?.records || []
     } catch (err) {
         console.error('Fetch history failed', err)
+        historyRecords.value = []
     } finally {
         loading.value = false
     }
@@ -39,11 +39,7 @@ const fetchUserInfo = async () => {
 }
 
 const startConsultation = () => {
-    // For now, default to department 1 or let them choose. 
-    // We will redirect to questionnaire page with department query.
-    // Assuming Department ID 1 exists or handled.
-    // In real app we need a department selection step if multiple exist.
-    router.push({ name: 'department-list' })
+    router.push({ name: 'ai-chat' })
 }
 
 const logout = () => {
@@ -59,28 +55,26 @@ onMounted(() => {
 
 <template>
   <div class="patient-home">
-    <!-- Header -->
     <header class="bg-white shadow">
         <div class="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
             <div class="flex items-center">
-                <Icon icon="mdi:medical-bag" class="text-3xl text-green-600 mr-2" />
+                <el-icon class="text-3xl text-green-600 mr-2"><FirstAidKit /></el-icon>
                 <span class="font-bold text-xl text-gray-800">MediMeow 个人中心</span>
             </div>
             <div class="flex items-center space-x-4">
                  <span class="text-gray-600">{{ userInfo.username || userInfo.phone_number }}</span>
                  <button @click="logout" class="text-gray-400 hover:text-red-500">
-                     <Icon icon="mdi:logout" class="text-xl" />
+                     <el-icon class="text-xl"><SwitchButton /></el-icon>
                  </button>
             </div>
         </div>
     </header>
 
     <main class="max-w-4xl mx-auto px-4 py-8">
-        <!-- Identity Card -->
         <div class="bg-white rounded-xl p-6 shadow-sm mb-8 flex items-center justify-between">
              <div class="flex items-center">
                  <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 mr-4">
-                     <Icon icon="mdi:account" class="text-3xl" />
+                     <el-icon class="text-3xl"><User /></el-icon>
                  </div>
                  <div>
                      <h2 class="text-xl font-bold">{{ userInfo.username || '未实名用户' }}</h2>
@@ -98,7 +92,6 @@ onMounted(() => {
              </div>
         </div>
 
-        <!-- Action Area -->
         <div class="mb-8">
             <h3 class="text-lg font-bold mb-4">快速就医</h3>
             <div class="grid grid-cols-2 gap-4">
@@ -106,7 +99,7 @@ onMounted(() => {
                     @click="startConsultation"
                     class="bg-green-600 text-white p-6 rounded-xl shadow-lg hover:bg-green-700 transition flex flex-col items-center justify-center h-32"
                 >
-                    <Icon icon="mdi:stethoscope" class="text-4xl mb-2" />
+                    <el-icon class="text-4xl mb-2"><Stethoscope /></el-icon>
                     <span class="font-bold text-lg">AI 智能导诊</span>
                     <span class="text-white text-opacity-80 text-sm">填写问卷，快速分诊</span>
                 </button>
@@ -115,23 +108,31 @@ onMounted(() => {
                     @click="router.push({ name: 'patient-history' })"
                     class="bg-white text-gray-700 p-6 rounded-xl shadow border hover:bg-gray-50 transition flex flex-col items-center justify-center h-32"
                 >
-                    <Icon icon="mdi:history" class="text-4xl mb-2 text-blue-500" />
+                    <el-icon class="text-4xl mb-2 text-blue-500"><Clock /></el-icon>
                     <span class="font-bold text-lg">历史问诊</span>
                     <span class="text-gray-400 text-sm">查看过往就医记录</span>
+                </button>
+                
+                <button 
+                    @click="router.push({ name: 'patient-appointment' })"
+                    class="bg-white text-gray-700 p-6 rounded-xl shadow border hover:bg-gray-50 transition flex flex-col items-center justify-center h-32 col-span-2"
+                >
+                    <el-icon class="text-4xl mb-2 text-purple-500"><Calendar /></el-icon>
+                    <span class="font-bold text-lg">复查预约</span>
+                    <span class="text-gray-400 text-sm">预约复诊时间</span>
                 </button>
             </div>
         </div>
 
-        <!-- History List -->
         <div>
             <h3 class="text-lg font-bold mb-4">最近记录</h3>
             
             <div v-if="loading" class="text-center py-8">
-                <Icon icon="mdi:loading" class="animate-spin text-3xl mx-auto text-gray-400" />
+                <el-icon class="animate-spin text-3xl mx-auto text-gray-400"><Loading /></el-icon>
             </div>
             
             <div v-else-if="historyRecords.length === 0" class="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-300">
-                <Icon icon="mdi:clipboard-text-off-outline" class="text-4xl text-gray-300 mx-auto mb-2" />
+                <el-icon class="text-4xl text-gray-300 mx-auto mb-2"><DocumentRemove /></el-icon>
                 <p class="text-gray-500">暂无就诊记录</p>
             </div>
             
