@@ -17,7 +17,7 @@ if sys.platform == 'win32':
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'GlmAI'))
 
 import grpc
 import connect.medical_ai_pb2 as medical_ai_pb2
