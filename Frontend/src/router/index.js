@@ -6,18 +6,24 @@ const router = createRouter({
     routes: [
         {
             path: '/',
-            name: 'landing',
+            name: 'login',
             component: () => import('../views/Landing.vue')
         },
-        // Doctor Routes
+        {
+            path: '/login',
+            redirect: '/'
+        },
         {
             path: '/doctor/login',
-            name: 'doctor-login',
-            component: () => import('../views/Login.vue')
+            redirect: '/'
+        },
+        {
+            path: '/patient/login',
+            redirect: '/'
         },
         {
             path: '/doctor/dashboard',
-            name: 'dashboard', // Existing name kept for compatibility
+            name: 'dashboard',
             component: () => import('../views/Dashboard.vue'),
             meta: { requiresAuth: true, role: 'doctor' }
         },
@@ -26,12 +32,6 @@ const router = createRouter({
             name: 'patient-detail',
             component: () => import('../views/PatientDetail.vue'),
             meta: { requiresAuth: true, role: 'doctor' }
-        },
-        // Patient Routes
-        {
-            path: '/patient/login',
-            name: 'patient-login',
-            component: () => import('../views/patient/Login.vue')
         },
         {
             path: '/patient/register',
@@ -86,7 +86,6 @@ const router = createRouter({
             component: () => import('../views/patient/Appointment.vue'),
             meta: { requiresAuth: true, role: 'patient' }
         },
-        // Redirect
         {
             path: '/:pathMatch(.*)*',
             redirect: '/'
@@ -97,22 +96,13 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
     const authStore = useAuthStore()
 
-    // Check if route requires auth
     if (to.meta.requiresAuth) {
         if (!authStore.isLoggedIn) {
-            if (to.meta.role === 'patient') {
-                next({ name: 'patient-login' })
-            } else {
-                next({ name: 'doctor-login' })
-            }
+            next({ name: 'login' })
             return
         }
-
-        // Role check (Optional based on implementation, here simplified)
-        // In a real app we should check authStore.userType vs to.meta.role
     }
 
-    // Public pages
     next()
 })
 

@@ -12,8 +12,8 @@ export const useAuthStore = defineStore('auth', {
         isLoggedIn: (state) => !!state.token
     },
     actions: {
-        // Doctor Login
-        async login(username, password) {
+        // 医生登录
+        async doctorLogin(username, password) {
             try {
                 const res = await request.post('/doctor/login', null, {
                     params: { username, password }
@@ -30,8 +30,44 @@ export const useAuthStore = defineStore('auth', {
 
                 return true
             } catch (error) {
-                console.error('Login failed:', error)
+                console.error('Doctor login failed:', error)
                 throw error
+            }
+        },
+        // 患者登录
+        async patientLogin(username, password) {
+            try {
+                const formData = new URLSearchParams()
+                formData.append('phone_number', username)
+                formData.append('password', password)
+
+                const res = await request.post('/user/login', formData, {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                })
+
+                const data = res.data
+                this.token = data.token
+                this.user = data.user
+                this.role = 'patient'
+
+                localStorage.setItem('token', this.token)
+                localStorage.setItem('user', JSON.stringify(this.user))
+                localStorage.setItem('role', 'patient')
+
+                return true
+            } catch (error) {
+                console.error('Patient login failed:', error)
+                throw error
+            }
+        },
+        // 统一登录方法 - 根据角色调用不同接口
+        async login(username, password, role = 'doctor') {
+            if (role === 'patient') {
+                return await this.patientLogin(username, password)
+            } else {
+                return await this.doctorLogin(username, password)
             }
         },
         logout() {
