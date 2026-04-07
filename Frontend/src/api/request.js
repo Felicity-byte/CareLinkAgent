@@ -2,9 +2,21 @@ import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
 
 const service = axios.create({
-    baseURL: '/api', // Proxy will handle this
+    baseURL: '/api',
     timeout: 5000
 })
+
+let isRefreshing = false
+let refreshSubscribers = []
+
+function subscribeTokenRefresh(callback) {
+    refreshSubscribers.push(callback)
+}
+
+function onTokenRefreshed(token) {
+    refreshSubscribers.forEach(callback => callback(token))
+    refreshSubscribers = []
+}
 
 // Request interceptor
 service.interceptors.request.use(
@@ -24,12 +36,9 @@ service.interceptors.request.use(
 service.interceptors.response.use(
     (response) => {
         const res = response.data
-        // Backend returns { base: { code: "10000", msg: "..." }, data: ... }
-        // Check res.base.code
         if (res.base && res.base.code !== '10000') {
             console.error('Error:', res.base.msg)
 
-            // Handle auth errors
             if (res.base.code === '401' || res.base.code === '10003') {
                 const authStore = useAuthStore()
                 authStore.logout()
@@ -41,8 +50,42 @@ service.interceptors.response.use(
             return res
         }
     },
-    (error) => {
-        console.error('API Error:', error)
+    async (error) => {
+        const authStore = useAuthStore()
+        const originalRequest = error.config
+
+        if (error.response?.status === 401 && !originalRequest._retry) {
+            if (isRefreshing) {
+                return new Promise((resolve) => {
+                    subscribeTokenRefresh((token) => {
+                        originalRequest.headers['Authorization'] = `Bearer ${token}`
+                        resolve(service(originalRequest))
+                    })
+                })
+            }
+
+            originalRequest._retry = true
+            isRefreshing = true
+
+            try {
+                const success = await authStore.refreshToken()
+                if (success) {
+                    const newToken = authStore.token
+                    onTokenRefreshed(newToken)
+                    originalRequest.headers['Authorization'] = `Bearer ${newToken}`
+                    return service(originalRequest)
+                } else {
+                    authStore.logout()
+                    location.reload()
+                }
+            } catch (err) {
+                authStore.logout()
+                location.reload()
+            } finally {
+                isRefreshing = false
+            }
+        }
+
         return Promise.reject(error)
     }
 )

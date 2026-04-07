@@ -4,27 +4,53 @@ import request from '../api/request'
 export const useAuthStore = defineStore('auth', {
     state: () => ({
         token: localStorage.getItem('token') || '',
+        refresh_token: localStorage.getItem('refresh_token') || '',
         doctor: JSON.parse(localStorage.getItem('doctor') || 'null'),
         user: JSON.parse(localStorage.getItem('user') || 'null'),
-        role: localStorage.getItem('role') || '' // 'doctor' or 'patient'
+        role: localStorage.getItem('role') || ''
     }),
     getters: {
         isLoggedIn: (state) => !!state.token
     },
     actions: {
+        setTokens(token, refreshToken) {
+            this.token = token
+            this.refresh_token = refreshToken
+            localStorage.setItem('token', token)
+            localStorage.setItem('refresh_token', refreshToken)
+        },
+        async refreshToken() {
+            if (!this.refresh_token) return false
+            try {
+                const formData = new URLSearchParams()
+                formData.append('refresh_token', this.refresh_token)
+
+                const endpoint = this.role === 'patient' ? '/user/refresh' : '/doctor/refresh'
+                const res = await request.post(endpoint, formData, {
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                })
+
+                if (res.base && res.base.code === '10000') {
+                    this.setTokens(res.data.token, res.data.refresh_token)
+                    return true
+                }
+            } catch (error) {
+                console.error('Token refresh failed:', error)
+            }
+            return false
+        },
         // 医生登录
         async doctorLogin(username, password) {
             try {
                 const res = await request.post('/doctor/login', null, {
-                    params: { username, password }
+                    params: { phone_number: username, password }
                 })
 
                 const data = res.data
-                this.token = data.token
+                this.setTokens(data.token, data.refresh_token)
                 this.doctor = data.doctor
                 this.role = 'doctor'
 
-                localStorage.setItem('token', this.token)
                 localStorage.setItem('doctor', JSON.stringify(this.doctor))
                 localStorage.setItem('role', 'doctor')
 
@@ -48,11 +74,10 @@ export const useAuthStore = defineStore('auth', {
                 })
 
                 const data = res.data
-                this.token = data.token
+                this.setTokens(data.token, data.refresh_token)
                 this.user = data.user
                 this.role = 'patient'
 
-                localStorage.setItem('token', this.token)
                 localStorage.setItem('user', JSON.stringify(this.user))
                 localStorage.setItem('role', 'patient')
 
@@ -72,10 +97,12 @@ export const useAuthStore = defineStore('auth', {
         },
         logout() {
             this.token = ''
+            this.refresh_token = ''
             this.doctor = null
             this.user = null
             this.role = ''
             localStorage.removeItem('token')
+            localStorage.removeItem('refresh_token')
             localStorage.removeItem('doctor')
             localStorage.removeItem('user')
             localStorage.removeItem('role')

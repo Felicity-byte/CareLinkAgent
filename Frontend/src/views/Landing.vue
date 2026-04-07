@@ -1,7 +1,9 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import request from '../api/request'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -17,8 +19,24 @@ const showRegisterDialog = ref(false)
 const showDoctorForgotDialog = ref(false)
 const showPatientForgotDialog = ref(false)
 
-const registerForm = ref({ username: '', password: '', confirmPassword: '', department: '' })
+const registerForm = ref({ phone: '', password: '', confirmPassword: '', username: '', departmentId: '' })
 const forgotForm = ref({ username: '', phone: '' })
+const departmentList = ref([])
+
+const fetchDepartments = async () => {
+  try {
+    const res = await request.get('/department/list')
+    if (res.base && res.base.code === '10000') {
+      departmentList.value = res.data || []
+    }
+  } catch (error) {
+    console.error('获取科室列表失败:', error)
+  }
+}
+
+onMounted(() => {
+  fetchDepartments()
+})
 
 const handleLogin = async () => {
   const form = loginType.value === 'doctor' ? doctorForm.value : patientForm.value
@@ -35,7 +53,7 @@ const handleLogin = async () => {
     const success = await authStore.login(form.username, form.password, loginType.value)
     if (success) {
       if (loginType.value === 'patient') {
-        router.push({ name: 'patient-home' })
+        router.push({ name: 'ai-chat' })
       } else {
         router.push({ name: 'dashboard' })
       }
@@ -65,15 +83,38 @@ const switchToDoctor = () => {
   }, 500)
 }
 
-const handleRegister = () => {
-  if (!registerForm.value.username || !registerForm.value.password) {
+const handleRegister = async () => {
+  if (!registerForm.value.phone || !registerForm.value.password || !registerForm.value.username || !registerForm.value.departmentId) {
+    errorMsg.value = '请填写完整信息'
     return
   }
   if (registerForm.value.password !== registerForm.value.confirmPassword) {
+    errorMsg.value = '两次输入的密码不一致'
     return
   }
-  showRegisterDialog.value = false
-  registerForm.value = { username: '', password: '', confirmPassword: '', department: '' }
+
+  loading.value = true
+  errorMsg.value = ''
+
+  try {
+    const formData = new URLSearchParams()
+    formData.append('phone_number', registerForm.value.phone)
+    formData.append('password', registerForm.value.password)
+    formData.append('username', registerForm.value.username)
+    formData.append('department_id', registerForm.value.departmentId)
+
+    await request.post('/doctor/register', formData, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    })
+
+    ElMessage.success('注册成功，请登录')
+    showRegisterDialog.value = false
+    registerForm.value = { phone: '', password: '', confirmPassword: '', username: '', departmentId: '' }
+  } catch (err) {
+    errorMsg.value = err.message || '注册失败，请重试'
+  } finally {
+    loading.value = false
+  }
 }
 
 const handleForgotPassword = (type) => {
@@ -106,12 +147,12 @@ const handleForgotPassword = (type) => {
             </div>
             <div v-else key="form" class="form-content">
               <div class="form-group">
-                <label>用户名</label>
+                <label>手机号</label>
                 <input
                   v-model="doctorForm.username"
                   type="text"
                   class="form-input"
-                  placeholder="输入您的用户名"
+                  placeholder="输入您的手机号"
                   @keyup.enter="handleLogin"
                 >
               </div>
@@ -161,7 +202,7 @@ const handleForgotPassword = (type) => {
             </div>
             <div v-else key="form" class="form-content">
               <div class="form-group">
-                <label>用户名</label>
+                <label>手机号</label>
                 <input
                   v-model="patientForm.username"
                   type="text"
@@ -224,8 +265,8 @@ const handleForgotPassword = (type) => {
 
     <el-dialog v-model="showRegisterDialog" title="医生注册" width="400px" :close-on-click-modal="false">
       <el-form :model="registerForm" label-width="80px">
-        <el-form-item label="用户名">
-          <el-input v-model="registerForm.username" placeholder="请输入用户名" />
+        <el-form-item label="手机号">
+          <el-input v-model="registerForm.phone" placeholder="请输入手机号" />
         </el-form-item>
         <el-form-item label="密码">
           <el-input v-model="registerForm.password" type="password" placeholder="请输入密码" />
@@ -233,12 +274,17 @@ const handleForgotPassword = (type) => {
         <el-form-item label="确认密码">
           <el-input v-model="registerForm.confirmPassword" type="password" placeholder="请再次输入密码" />
         </el-form-item>
+        <el-form-item label="姓名">
+          <el-input v-model="registerForm.username" placeholder="请输入姓名" />
+        </el-form-item>
         <el-form-item label="科室">
-          <el-select v-model="registerForm.department" placeholder="请选择科室" style="width: 100%">
-            <el-option label="内科" value="neike" />
-            <el-option label="外科" value="waike" />
-            <el-option label="儿科" value="erke" />
-            <el-option label="妇产科" value="fuke" />
+          <el-select v-model="registerForm.departmentId" placeholder="请选择科室" style="width: 100%">
+            <el-option
+              v-for="dept in departmentList"
+              :key="dept.id"
+              :label="dept.name"
+              :value="dept.id"
+            />
           </el-select>
         </el-form-item>
       </el-form>

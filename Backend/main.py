@@ -20,6 +20,15 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
+@app.get("/migrate")
+async def migrate():
+    """数据库迁移接口"""
+    await Tortoise.init(config=TORTOISE_ORM)
+    await Tortoise.generate_schemas()
+    await Tortoise.close_connections()
+    return {"msg": "迁移完成"}
+
 # 跨域配置
 app.add_middleware(
     CORSMiddleware,

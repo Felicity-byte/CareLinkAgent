@@ -2,12 +2,11 @@ import sys
 import os
 import time
 import threading
-from typing import Generator, Optional
+from typing import Generator, Optional, List, Dict
 from datetime import datetime
 
 from zhipuai import ZhipuAI
 
-# 导入模块
 sys.path.insert(0, os.path.dirname(__file__))
 
 import config.config as config
@@ -16,15 +15,15 @@ import rag.rag_core as rag_core
 import session_manager as session_mgr
 from knowledge.zhipu_knowledge import zhipu_knowledge, initialize_zhipu_knowledge
 
-# ==========================
-# 全局依赖
-# ==========================
 GLOBAL_CLIENT: Optional[ZhipuAI] = None
-GLOBAL_POST_SURGERY_RAG = None  # 术后护理文档 RAG
-GLOBAL_ZHIPU_KNOWLEDGE = None    # 智谱知识库
-_rag_loaded = False              # RAG是否已加载完成
-_rag_loading = False             # RAG是否正在加载中
-_rag_lock = threading.Lock()     # RAG加载锁，防止并发重复加载
+GLOBAL_POST_SURGERY_RAG = None
+GLOBAL_ZHIPU_KNOWLEDGE = None
+_rag_loaded = False
+_rag_loading = False
+_rag_lock = threading.Lock()
+
+MAX_RETRIES = 3
+RETRY_DELAY = 1.0
 
 
 def _background_load_rag():
@@ -181,6 +180,43 @@ def hybrid_retrieve(query: str, surgery_type: str = None) -> tuple:
     return "", "llm_only"
 
 
+def detect_emergency(message: str) -> tuple:
+    """
+    检测危急情况
+    
+    Returns:
+        (is_emergency: bool, matched_keywords: list)
+    """
+    matched = []
+    message_lower = message.lower()
+    
+    for keyword in prompts.EMERGENCY_KEYWORDS:
+        if keyword in message_lower or keyword in message:
+            matched.append(keyword)
+    
+    return len(matched) > 0, matched
+
+
+def extract_symptoms(message: str) -> List[str]:
+    """
+    从消息中提取症状关键词
+    
+    Returns:
+        症状列表
+    """
+    symptoms = []
+    message_lower = message.lower()
+    
+    for category, keywords in prompts.SYMPTOM_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in message_lower or keyword in message:
+                if category not in symptoms:
+                    symptoms.append(category)
+                break
+    
+    return symptoms
+
+
 def create_session(patient_id: str, patient_name: str, surgery_date: str) -> dict:
     """创建会话"""
     session = session_mgr.session_manager.create_session(
@@ -271,19 +307,37 @@ def should_end_conversation(session) -> bool:
 
 def normal_chat_stream(session, message: str) -> Generator[dict, None, None]:
     """正常对话流程 - 混合检索 + LLM 流式回复"""
-    # 混合检索
+    
+    is_emergency, emergency_keywords = detect_emergency(message)
+    detected_symptoms = extract_symptoms(message)
+    
+    print(f"[DEBUG] 检测到症状: {detected_symptoms}")
+    
+    if is_emergency:
+        print(f"[WARNING] 检测到危急情况: {emergency_keywords}")
+        emergency_response = prompts.EMERGENCY_RESPONSE_TEMPLATE.format(
+            symptoms="、".join(emergency_keywords)
+        )
+        session.add_message("ai", emergency_response)
+        
+        yield {
+            "content": emergency_response,
+            "is_final": True,
+            "reference": "",
+            "is_emergency": True
+        }
+        return
+    
     retrieved_context, source = hybrid_retrieve(
         message, 
         surgery_type=session.surgery_type
     )
     
-    # 构建系统提示词
     system_prompt = prompts.CHAT_SYSTEM_PROMPT.format(
         surgery_type=session.surgery_type or "未知",
         surgery_date=session.surgery_date
     )
     
-    # 如果有检索到的文档，添加到上下文
     if retrieved_context:
         user_content = prompts.RAG_CONTEXT_TEMPLATE.format(
             retrieved_context=retrieved_context
@@ -291,85 +345,104 @@ def normal_chat_stream(session, message: str) -> Generator[dict, None, None]:
     else:
         user_content = message
     
-    # 调用 LLM 流式生成
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content}
     ]
     
-    try:
-        full_response = ""
-        response = GLOBAL_CLIENT.chat.completions.create(
-            model="glm-4.7-flash",
-            messages=messages,
-            temperature=config.TEMPERATURE if config.TEMPERATURE > 0 else 0.7,
-            max_tokens=config.MAX_TOKENS,
-            stream=True
-        )
-        
-        for chunk in response:
-            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                content = chunk.choices[0].delta.content
-                full_response += content
+    full_response = ""
+    last_error = None
+    
+    for retry in range(MAX_RETRIES):
+        try:
+            response = GLOBAL_CLIENT.chat.completions.create(
+                model="glm-4.7-flash",
+                messages=messages,
+                temperature=config.TEMPERATURE if config.TEMPERATURE > 0 else 0.7,
+                max_tokens=config.MAX_TOKENS,
+                stream=True
+            )
+            
+            for chunk in response:
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    full_response += content
+                    
+                    yield {
+                        "content": content,
+                        "is_final": False,
+                        "reference": retrieved_context[:100] if retrieved_context else ""
+                    }
+            
+            if full_response:
+                break
+            else:
+                print(f"[WARNING] 第{retry + 1}次尝试返回空响应，准备重试...")
+                time.sleep(RETRY_DELAY)
                 
-                yield {
-                    "content": content,
-                    "is_final": False,
-                    "reference": retrieved_context[:100] if retrieved_context else ""
-                }
-        
-        if not full_response:
-            yield {
-                "content": "[ERROR:SERVICE_BUSY]",
-                "is_final": True,
-                "reference": "",
-                "error": "SERVICE_BUSY",
-                "error_message": "AI服务繁忙，请稍后重试"
-            }
-            print("[警告] AI返回空响应，可能是API速率限制")
-            return
-        
-        session.add_message("ai", full_response)
+        except Exception as e:
+            last_error = e
+            print(f"[ERROR] 第{retry + 1}次调用失败: {str(e)}")
+            if retry < MAX_RETRIES - 1:
+                time.sleep(RETRY_DELAY)
+    
+    if not full_response:
+        error_msg = f"AI服务调用失败，已重试{MAX_RETRIES}次"
+        if last_error:
+            error_msg += f"，最后错误: {str(last_error)}"
+        print(f"[ERROR] {error_msg}")
         
         yield {
-            "content": "",
-            "is_final": True,
-            "reference": ""
-        }
-        
-    except Exception as e:
-        error_msg = f"AI 服务出错: {str(e)}"
-        print(f"[错误] {error_msg}")
-        yield {
-            "content": f"[ERROR:API_ERROR] {error_msg}",
+            "content": "[ERROR:SERVICE_BUSY]",
             "is_final": True,
             "reference": "",
-            "error": "API_ERROR",
+            "error": "SERVICE_BUSY",
             "error_message": error_msg
         }
+        return
+    
+    session.add_message("ai", full_response)
+    
+    yield {
+        "content": "",
+        "is_final": True,
+        "reference": "",
+        "detected_symptoms": detected_symptoms
+    }
 
 
 def end_chat_stream(session) -> Generator[dict, None, None]:
     """结束对话并生成病历"""
-    # 生成结构化病历
     report = generate_medical_report(session)
     
-    # 结束会话
     session_mgr.session_manager.end_session(session.session_id)
     
     yield {
         "content": "感谢您的配合！我已为您生成了随访报告。",
         "is_final": True,
-        "reference": ""
+        "reference": "",
+        "report": report
     }
 
 
 def generate_medical_report(session) -> dict:
     """生成结构化病历"""
+    
+    if not session or not session.conversation:
+        print(f"[WARNING] 会话 {session.session_id if session else 'None'} 无消息记录")
+        return {
+            "session_id": session.session_id if session else "unknown",
+            "report_text": "无法生成报告：会话无消息记录",
+            "status": "ERROR",
+            "error": "NO_CONVERSATION"
+        }
+    
     conversation_history = "\n".join([
         f"{msg.role}: {msg.content}" 
         for msg in session.conversation
     ])
+    
+    print(f"[DEBUG] 会话 {session.session_id} 共有 {len(session.conversation)} 条消息")
     
     prompt = prompts.MEDICAL_REPORT_PROMPT.format(
         conversation_history=conversation_history,
@@ -378,29 +451,62 @@ def generate_medical_report(session) -> dict:
         surgery_date=session.surgery_date
     )
     
-    try:
-        response = GLOBAL_CLIENT.chat.completions.create(
-            model="glm-4.7-flash",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=config.MAX_TOKENS,
-            stream=False
-        )
-        
-        report_text = response.choices[0].message.content
+    all_symptoms = []
+    for msg in session.conversation:
+        if msg.role == "patient":
+            symptoms = extract_symptoms(msg.content)
+            all_symptoms.extend(symptoms)
+    all_symptoms = list(set(all_symptoms))
+    
+    report_text = None
+    last_error = None
+    
+    for retry in range(MAX_RETRIES):
+        try:
+            response = GLOBAL_CLIENT.chat.completions.create(
+                model="glm-4.7-flash",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=config.MAX_TOKENS,
+                stream=False
+            )
+            
+            report_text = response.choices[0].message.content
+            
+            if report_text and len(report_text) > 50:
+                break
+            else:
+                print(f"[WARNING] 第{retry + 1}次病历生成返回内容过短，准备重试...")
+                time.sleep(RETRY_DELAY)
+                
+        except Exception as e:
+            last_error = e
+            print(f"[ERROR] 第{retry + 1}次病历生成失败: {str(e)}")
+            if retry < MAX_RETRIES - 1:
+                time.sleep(RETRY_DELAY)
+    
+    if not report_text:
+        error_msg = f"病历生成失败，已重试{MAX_RETRIES}次"
+        if last_error:
+            error_msg += f"，最后错误: {str(last_error)}"
+        print(f"[ERROR] {error_msg}")
         
         return {
             "session_id": session.session_id,
-            "report_text": report_text,
-            "status": "SUCCESS"
+            "report_text": error_msg,
+            "status": "ERROR",
+            "error": "GENERATION_FAILED"
         }
-        
-    except Exception as e:
-        return {
-            "session_id": session.session_id,
-            "report_text": f"报告生成失败: {str(e)}",
-            "status": "ERROR"
-        }
+    
+    print(f"[OK] 会话 {session.session_id} 病历生成成功，长度: {len(report_text)}")
+    
+    return {
+        "session_id": session.session_id,
+        "report_text": report_text,
+        "status": "SUCCESS",
+        "detected_symptoms": all_symptoms,
+        "conversation_count": len(session.conversation)
+    }
 
 
 def get_session_history(session_id: str) -> Optional[dict]:

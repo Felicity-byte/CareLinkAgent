@@ -16,45 +16,57 @@ export const usePatientStore = defineStore('patient', {
             const authStore = useAuthStore()
 
             try {
-                if (!authStore.doctor) {
-                    throw new Error("No doctor logged in")
+                const res = await request.get('/doctor/patients')
+                if (res.base && res.base.code === '10000') {
+                    this.patients = res.data || []
                 }
-
-                // 1. Get Queue IDs
-                const queueRes = await request.get('/doctor/queue', {
-                    params: { user_id: authStore.doctor.id }
-                })
-                const recordIds = queueRes.data.record_ids || []
-
-                if (recordIds.length === 0) {
-                    this.patients = []
-                    return
-                }
-
-                // 2. Fetch details for each record
-                // Note: In a real app we would want a bulk API or pagination with details.
-                // This is the workaround for the N+1 problem.
-                const detailPromises = recordIds.map(id =>
-                    request.get(`/doctor/summary/${id}`)
-                        .then(res => ({
-                            record_id: id,
-                            // API returns {base: {...}, data: {...}}, extract inner data
-                            ...(res.data?.data || res.data)
-                        }))
-                        .catch(err => {
-                            console.error(`Failed to fetch summary for ${id}`, err)
-                            return null
-                        })
-                )
-
-                const details = await Promise.all(detailPromises)
-                this.patients = details.filter(item => item !== null)
-
             } catch (err) {
-                console.error('Fetch queue failed:', err)
+                console.error('Fetch patients failed:', err)
                 this.error = err.message || '获取患者列表失败'
             } finally {
                 this.loading = false
+            }
+        },
+
+        async registerPatient(phone_number, password, username) {
+            try {
+                const formData = new URLSearchParams()
+                formData.append('phone_number', phone_number)
+                formData.append('password', password)
+                formData.append('username', username)
+
+                const res = await request.post('/doctor/patient/register', formData, {
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                })
+
+                if (res.base && res.base.code === '10000') {
+                    await this.fetchQueue()
+                    return { success: true, ...res.data }
+                }
+                return { success: false, msg: res.base?.msg }
+            } catch (err) {
+                console.error('Register patient failed:', err)
+                throw err
+            }
+        },
+
+        async bindPatient(phone_number) {
+            try {
+                const formData = new URLSearchParams()
+                formData.append('phone_number', phone_number)
+
+                const res = await request.post('/doctor/patient/bind', formData, {
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                })
+
+                if (res.base && res.base.code === '10000') {
+                    await this.fetchQueue()
+                    return true
+                }
+                return false
+            } catch (err) {
+                console.error('Bind patient failed:', err)
+                throw err
             }
         },
 
@@ -64,8 +76,6 @@ export const usePatientStore = defineStore('patient', {
                     record_id: recordId,
                     text: text
                 })
-                // Remove from local queue or update status
-                this.patients = this.patients.filter(p => p.record_id !== recordId)
                 return true
             } catch (err) {
                 console.error('Submit report failed', err)

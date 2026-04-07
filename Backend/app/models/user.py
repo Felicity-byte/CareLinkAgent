@@ -16,6 +16,7 @@ class User(Model):
     origin = fields.CharField(max_length=100, null=True, description="籍贯")
     avatar_url = fields.CharField(max_length=500, null=True, description="头像URL")
     email = fields.CharField(max_length=100, null=True, description="邮箱")
+    responsible_doctor = fields.ForeignKeyField("models.Doctor", related_name="patients", null=True, on_delete=fields.SET_NULL, description="负责医生")
     created_at = fields.DatetimeField(auto_now_add=True, description="创建时间")
     updated_at = fields.DatetimeField(auto_now=True, description="更新时间")
     deleted_at = fields.DatetimeField(null=True, description="删除时间")

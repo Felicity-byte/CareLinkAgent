@@ -4,13 +4,15 @@ from zhipuai import ZhipuAI
 
 class ZhipuKnowledge:
     """智谱知识库检索模块"""
-    
+
+    DEFAULT_KNOWLEDGE_ID = "2041426353097789440"
+
     def __init__(self, api_key: str = None, knowledge_id: str = None):
-        self.api_key = api_key or os.environ.get("ZHIPU_API_KEY")
-        self.knowledge_id = knowledge_id or os.environ.get("ZHIPU_KNOWLEDGE_ID")
+        self.api_key = api_key or os.environ.get("ZHIPU_API_KEY") or os.environ.get("GLM_API_KEY")
+        self.knowledge_id = knowledge_id or os.environ.get("ZHIPU_KNOWLEDGE_ID") or self.DEFAULT_KNOWLEDGE_ID
         self.client: Optional[ZhipuAI] = None
         self.is_available = False
-        
+
         if self.api_key and self.knowledge_id:
             try:
                 self.client = ZhipuAI(api_key=self.api_key)

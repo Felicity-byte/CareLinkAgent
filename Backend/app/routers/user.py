@@ -8,6 +8,7 @@ from app.utils import (
     get_password_hash,
     verify_password,
     create_access_token,
+    create_refresh_token,
     get_current_user,
     success_response,
     error_response
@@ -91,11 +92,16 @@ async def login(
     access_token = create_access_token(
         data={"sub": user.id, "type": "user"}
     )
+    refresh_token = create_refresh_token(
+        data={"sub": user.id, "type": "user"}
+    )
 
     # 按 API 文档数据结构定义：data.user 和 data.token
     return success_response(
         msg="登录成功",
         data={
+            "token": access_token,
+            "refresh_token": refresh_token,
             "user": {
                 "id": user.id,
                 "phone_number": user.phone_number,
@@ -176,3 +182,50 @@ async def bind_identity(
     await user.save()
 
     return success_response(msg="绑定成功")
+
+
+@router.post("/refresh")
+async def refresh_token(
+    refresh_token: str = Form(..., description="刷新令牌"),
+    db = Depends(get_db)
+):
+    """刷新访问令牌"""
+    from jose import jwt
+    from config import settings
+
+    try:
+        payload = jwt.decode(
+            refresh_token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+
+        if payload.get("type") != "refresh":
+            return error_response(code="10005", msg="无效的刷新令牌")
+
+        user_id = payload.get("sub")
+        user_type = payload.get("type")
+
+        if user_type == "user":
+            user = await User.filter(id=user_id, deleted_at__isnull=True).first()
+            if not user:
+                return error_response(code="10004", msg="用户不存在")
+        else:
+            return error_response(code="10005", msg="无效的刷新令牌")
+
+        new_access_token = create_access_token(
+            data={"sub": user_id, "type": user_type}
+        )
+        new_refresh_token = create_refresh_token(
+            data={"sub": user_id, "type": user_type}
+        )
+
+        return success_response(
+            msg="刷新成功",
+            data={
+                "token": new_access_token,
+                "refresh_token": new_refresh_token
+            }
+        )
+    except Exception:
+        return error_response(code="10005", msg="刷新令牌已过期")
