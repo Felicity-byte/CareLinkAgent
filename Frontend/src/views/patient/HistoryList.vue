@@ -1,7 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import request from '../../api/request'
 
 const router = useRouter()
 const records = ref([])
@@ -12,39 +11,10 @@ const fetchRecords = async () => {
     loading.value = true
     error.value = null
     try {
-        const res = await request.get('/questionnaires/submit')
-        records.value = res.data.records || []
+        records.value = []
     } catch (err) {
         console.error('Fetch history failed', err)
-        records.value = [
-            {
-                record_id: '1',
-                department_name: '内科',
-                questionnaire_title: '头痛症状咨询',
-                created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-                status: '已完成',
-                status_code: 'completed',
-                ai_result: { key_info: { '主诉': '头痛、头晕三天，伴有轻微恶心' } }
-            },
-            {
-                record_id: '2',
-                department_name: '外科',
-                questionnaire_title: '发烧处理建议',
-                created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-                status: '等待中',
-                status_code: 'waiting',
-                ai_result: { key_info: { '主诉': '持续发烧38.5度两天' } }
-            },
-            {
-                record_id: '3',
-                department_name: '消化科',
-                questionnaire_title: '胃痛科室推荐',
-                created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-                status: '已完成',
-                status_code: 'completed',
-                ai_result: { key_info: { '主诉': '饭后胃部不适，偶尔反酸' } }
-            }
-        ]
+        records.value = []
     } finally {
         loading.value = false
     }

@@ -1,4 +1,5 @@
 import os
+import socket
 from typing import List, Optional, Dict, Any
 from zhipuai import ZhipuAI
 
@@ -13,13 +14,21 @@ class ZhipuKnowledge:
         self.client: Optional[ZhipuAI] = None
         self.is_available = False
 
-        if self.api_key and self.knowledge_id:
-            try:
-                self.client = ZhipuAI(api_key=self.api_key)
-                self.is_available = True
-                print(f"[智谱知识库] 初始化成功，knowledge_id: {self.knowledge_id}")
-            except Exception as e:
-                print(f"[智谱知识库] 初始化失败: {e}")
+        if not self.api_key:
+            print("[智谱知识库] 未配置 API Key，跳过初始化")
+            return
+        
+        if not self.knowledge_id:
+            print("[智谱知识库] 未配置 Knowledge ID，跳过初始化")
+            return
+
+        try:
+            socket.setdefaulttimeout(10)
+            self.client = ZhipuAI(api_key=self.api_key)
+            self.is_available = True
+            print(f"[智谱知识库] 初始化成功，knowledge_id: {self.knowledge_id}")
+        except Exception as e:
+            print(f"[智谱知识库] 初始化失败: {e}")
     
     def retrieve(self, query: str, top_k: int = 5) -> Optional[List[Dict[str, Any]]]:
         """

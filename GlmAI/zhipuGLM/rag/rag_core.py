@@ -24,7 +24,11 @@ def build_or_load_rag_index(docs_dir: str = None, persist_dir: str = None):
         print(f"--- 正在加载现有 Chroma 数据库: {persist_dir} ---")
         print(f"--- [DEBUG] 开始加载 Chroma ---")
         try:
-            result = Chroma(persist_directory=persist_dir, embedding_function=bge_embeddings)
+            import chromadb
+            print(f"--- [DEBUG] 创建 Chroma 客户端 ---")
+            chroma_client = chromadb.PersistentClient(path=persist_dir)
+            print(f"--- [DEBUG] Chroma 客户端创建成功，开始加载集合 ---")
+            result = Chroma(client=chroma_client, embedding_function=bge_embeddings)
             print(f"--- [DEBUG] Chroma 加载完成 ---")
             return result
         except Exception as e:

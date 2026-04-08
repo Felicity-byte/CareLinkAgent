@@ -37,7 +37,7 @@ const handleRegister = async () => {
         
         await request.post('/user/register', params)
         alert('注册成功，请登录')
-        router.push({ name: 'patient-login' })
+        router.push({ name: 'login' })
     } catch (err) {
         console.error('Register Error:', err)
         errorMsg.value = err.response?.data?.base?.msg || err.message || '注册失败'
@@ -101,7 +101,7 @@ const handleRegister = async () => {
         
         <div class="mt-4 text-center">
             <span class="text-gray-500">已有账号？</span>
-            <router-link :to="{ name: 'patient-login' }" class="text-green-600 font-bold hover:underline">
+            <router-link :to="{ name: 'login' }" class="text-green-600 font-bold hover:underline">
                 去登录
             </router-link>
         </div>

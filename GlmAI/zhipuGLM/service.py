@@ -56,6 +56,32 @@ def _background_load_rag():
         traceback.print_exc()
 
 
+def _init_zhipu_knowledge_with_timeout(timeout=30):
+    """带超时的智谱知识库初始化"""
+    result = [None]
+    error = [None]
+    
+    def _worker():
+        try:
+            result[0] = initialize_zhipu_knowledge()
+        except Exception as e:
+            error[0] = e
+    
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    
+    if t.is_alive():
+        print(f"  [WARNING] 智谱知识库初始化超时（{timeout}秒），跳过")
+        return None
+    
+    if error[0]:
+        print(f"  [WARNING] 智谱知识库初始化失败: {error[0]}")
+        return None
+    
+    return result[0]
+
+
 def initialize_service():
     """服务初始化函数"""
     global GLOBAL_CLIENT, GLOBAL_POST_SURGERY_RAG, GLOBAL_ZHIPU_KNOWLEDGE
@@ -69,10 +95,12 @@ def initialize_service():
         print("\n[Step 1/5] 正在初始化智谱AI客户端...")
         api_key = os.environ.get("GLM_API_KEY")
         if not api_key:
-            print("  [ERROR] 未找到 GLM_API_KEY 环境变量")
-            raise ValueError("GLM_API_KEY 环境变量未设置")
-        GLOBAL_CLIENT = ZhipuAI(api_key=api_key)
-        print("  [OK] 智谱AI客户端初始化成功")
+            print("  [WARNING] 未找到 GLM_API_KEY 环境变量")
+            print("  [INFO] AI服务将以降级模式运行（仅基础功能可用）")
+            GLOBAL_CLIENT = None
+        else:
+            GLOBAL_CLIENT = ZhipuAI(api_key=api_key)
+            print("  [OK] 智谱AI客户端初始化成功")
         
         # Step 2: 启动后台加载本地 RAG（术后护理文档）
         print("\n[Step 2/5] 设置术后护理文档向量数据库（后台预加载）...")
@@ -86,9 +114,9 @@ def initialize_service():
         rag_thread.start()
         print("  [OK] 向量数据库正在后台加载（不影响服务器启动）")
         
-        # Step 3: 初始化智谱知识库
+        # Step 3: 初始化智谱知识库（带超时保护）
         print("\n[Step 3/5] 正在初始化智谱知识库...")
-        GLOBAL_ZHIPU_KNOWLEDGE = initialize_zhipu_knowledge()
+        GLOBAL_ZHIPU_KNOWLEDGE = _init_zhipu_knowledge_with_timeout(timeout=30)
         if GLOBAL_ZHIPU_KNOWLEDGE and GLOBAL_ZHIPU_KNOWLEDGE.is_available:
             print("  [OK] 智谱知识库初始化成功")
         else:

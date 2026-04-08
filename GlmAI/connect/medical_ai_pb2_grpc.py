@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import connect.medical_ai_pb2 as medical__ai__pb2
+import medical_ai_pb2 as medical__ai__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
@@ -55,6 +55,16 @@ class PostSurgeryFollowUpServiceStub(object):
                 request_serializer=medical__ai__pb2.GetSessionHistoryRequest.SerializeToString,
                 response_deserializer=medical__ai__pb2.GetSessionHistoryResponse.FromString,
                 _registered_method=True)
+        self.AnalyzeWoundImage = channel.unary_unary(
+                '/medical_ai.PostSurgeryFollowUpService/AnalyzeWoundImage',
+                request_serializer=medical__ai__pb2.AnalyzeWoundImageRequest.SerializeToString,
+                response_deserializer=medical__ai__pb2.AnalyzeWoundImageResponse.FromString,
+                _registered_method=True)
+        self.ProcessPatientAnswers = channel.unary_unary(
+                '/medical_ai.PostSurgeryFollowUpService/ProcessPatientAnswers',
+                request_serializer=medical__ai__pb2.ProcessPatientAnswersRequest.SerializeToString,
+                response_deserializer=medical__ai__pb2.ProcessPatientAnswersResponse.FromString,
+                _registered_method=True)
 
 
 class PostSurgeryFollowUpServiceServicer(object):
@@ -85,6 +95,20 @@ class PostSurgeryFollowUpServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def AnalyzeWoundImage(self, request, context):
+        """伤口图片分析接口
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ProcessPatientAnswers(self, request, context):
+        """患者回答处理接口
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PostSurgeryFollowUpServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -107,6 +131,16 @@ def add_PostSurgeryFollowUpServiceServicer_to_server(servicer, server):
                     servicer.GetSessionHistory,
                     request_deserializer=medical__ai__pb2.GetSessionHistoryRequest.FromString,
                     response_serializer=medical__ai__pb2.GetSessionHistoryResponse.SerializeToString,
+            ),
+            'AnalyzeWoundImage': grpc.unary_unary_rpc_method_handler(
+                    servicer.AnalyzeWoundImage,
+                    request_deserializer=medical__ai__pb2.AnalyzeWoundImageRequest.FromString,
+                    response_serializer=medical__ai__pb2.AnalyzeWoundImageResponse.SerializeToString,
+            ),
+            'ProcessPatientAnswers': grpc.unary_unary_rpc_method_handler(
+                    servicer.ProcessPatientAnswers,
+                    request_deserializer=medical__ai__pb2.ProcessPatientAnswersRequest.FromString,
+                    response_serializer=medical__ai__pb2.ProcessPatientAnswersResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -218,6 +252,60 @@ class PostSurgeryFollowUpService(object):
             '/medical_ai.PostSurgeryFollowUpService/GetSessionHistory',
             medical__ai__pb2.GetSessionHistoryRequest.SerializeToString,
             medical__ai__pb2.GetSessionHistoryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AnalyzeWoundImage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/medical_ai.PostSurgeryFollowUpService/AnalyzeWoundImage',
+            medical__ai__pb2.AnalyzeWoundImageRequest.SerializeToString,
+            medical__ai__pb2.AnalyzeWoundImageResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ProcessPatientAnswers(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/medical_ai.PostSurgeryFollowUpService/ProcessPatientAnswers',
+            medical__ai__pb2.ProcessPatientAnswersRequest.SerializeToString,
+            medical__ai__pb2.ProcessPatientAnswersResponse.FromString,
             options,
             channel_credentials,
             insecure,

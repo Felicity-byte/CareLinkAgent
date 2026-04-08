@@ -1,12 +1,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import request from '../../api/request'
 
 import { useAuthStore } from '../../stores/auth'
 
 const router = useRouter()
-const route = useRoute()
 const authStore = useAuthStore()
 const departments = ref([])
 const loading = ref(true)
@@ -15,7 +14,7 @@ const error = ref(null)
 const fetchDepartments = async () => {
     loading.value = true
     try {
-        const res = await request.get('/department')
+        const res = await request.get('/department/list')
         departments.value = res.data
     } catch (err) {
         console.error('Fetch departments failed', err)
@@ -27,7 +26,6 @@ const fetchDepartments = async () => {
 
 const selectDepartment = (deptId) => {
     const user = authStore.user
-    console.log('Checking user for real name verification:', user)
     
     const isDefaultUser = user?.username?.startsWith('默认用户')
     
@@ -38,12 +36,7 @@ const selectDepartment = (deptId) => {
         return
     }
     
-    const mode = route.query.mode || 'chat'
-    if (mode === 'chat') {
-        router.push({ name: 'ai-chat', params: { deptId } })
-    } else {
-        router.push({ name: 'questionnaire', params: { deptId } })
-    }
+    router.push({ name: 'ai-chat' })
 }
 
 onMounted(() => {
@@ -77,15 +70,15 @@ onMounted(() => {
         <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div 
                 v-for="dept in departments" 
-                :key="dept.department_id"
-                @click="selectDepartment(dept.department_id)"
+                :key="dept.id"
+                @click="selectDepartment(dept.id)"
                 class="bg-white p-6 rounded-xl shadow-sm border border-transparent hover:border-green-500 hover:shadow-md cursor-pointer transition flex items-center"
             >
                 <div class="w-12 h-12 rounded-full bg-green-100 text-green-600 flex items-center justify-center mr-4">
                     <el-icon class="text-2xl"><UserFilled /></el-icon>
                 </div>
                 <div>
-                    <h3 class="font-bold text-lg text-gray-800">{{ dept.department_name }}</h3>
+                    <h3 class="font-bold text-lg text-gray-800">{{ dept.name }}</h3>
                     <p class="text-sm text-gray-500">点击进入智能问诊</p>
                 </div>
                 <el-icon class="ml-auto text-gray-300 text-xl"><ArrowRight /></el-icon>

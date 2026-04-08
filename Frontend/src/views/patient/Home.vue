@@ -17,8 +17,7 @@ const departments = [
 const fetchRecords = async () => {
     loading.value = true
     try {
-        const res = await request.get('/questionnaires/submit')
-        historyRecords.value = res.data?.records || []
+        historyRecords.value = []
     } catch (err) {
         console.error('Fetch history failed', err)
         historyRecords.value = []
@@ -44,7 +43,7 @@ const startConsultation = () => {
 
 const logout = () => {
     authStore.logout()
-    router.push({ name: 'landing' })
+    router.push({ name: 'login' })
 }
 
 onMounted(() => {
@@ -101,7 +100,7 @@ onMounted(() => {
                 >
                     <el-icon class="text-4xl mb-2"><Stethoscope /></el-icon>
                     <span class="font-bold text-lg">AI 智能导诊</span>
-                    <span class="text-white text-opacity-80 text-sm">填写问卷，快速分诊</span>
+                    <span class="text-white text-opacity-80 text-sm">智能问诊，快速分诊</span>
                 </button>
                 
                 <button 

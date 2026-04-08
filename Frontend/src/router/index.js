@@ -74,12 +74,6 @@ const router = createRouter({
             meta: { requiresAuth: true, role: 'patient' }
         },
         {
-            path: '/patient/questionnaire/:deptId',
-            name: 'questionnaire',
-            component: () => import('../views/patient/Questionnaire.vue'),
-            meta: { requiresAuth: true, role: 'patient' }
-        },
-        {
             path: '/patient/chat',
             name: 'ai-chat',
             component: () => import('../views/patient/Chat.vue'),
@@ -104,6 +98,10 @@ router.beforeEach((to, from, next) => {
     if (to.meta.requiresAuth) {
         if (!authStore.isLoggedIn) {
             next({ name: 'login' })
+            return
+        }
+        if (to.meta.role && authStore.role !== to.meta.role) {
+            next({ name: authStore.role === 'doctor' ? 'workspace' : 'patient-home' })
             return
         }
     }

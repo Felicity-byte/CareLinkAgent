@@ -72,9 +72,12 @@ export const usePatientStore = defineStore('patient', {
 
         async submitDiagnosis(recordId, text) {
             try {
-                await request.post('/doctor/report', {
-                    record_id: recordId,
-                    text: text
+                const formData = new URLSearchParams()
+                formData.append('record_id', recordId)
+                formData.append('text', text)
+                
+                await request.post('/doctor/report', formData, {
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
                 })
                 return true
             } catch (err) {

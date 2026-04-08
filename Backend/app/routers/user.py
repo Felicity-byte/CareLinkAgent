@@ -96,7 +96,6 @@ async def login(
         data={"sub": user.id, "type": "user"}
     )
 
-    # 按 API 文档数据结构定义：data.user 和 data.token
     return success_response(
         msg="登录成功",
         data={
@@ -109,8 +108,7 @@ async def login(
                 "created_at": user.created_at.strftime("%Y-%m-%d %H:%M:%S") if user.created_at else None,
                 "updated_at": user.updated_at.strftime("%Y-%m-%d %H:%M:%S") if user.updated_at else None,
                 "deleted_at": user.deleted_at.strftime("%Y-%m-%d %H:%M:%S") if user.deleted_at else None
-            },
-            "token": access_token
+            }
         }
     )
 
@@ -200,11 +198,11 @@ async def refresh_token(
             algorithms=[settings.ALGORITHM]
         )
 
-        if payload.get("type") != "refresh":
+        if payload.get("token_type") != "refresh":
             return error_response(code="10005", msg="无效的刷新令牌")
 
         user_id = payload.get("sub")
-        user_type = payload.get("type")
+        user_type = payload.get("type", "user")
 
         if user_type == "user":
             user = await User.filter(id=user_id, deleted_at__isnull=True).first()

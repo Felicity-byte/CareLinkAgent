@@ -2,6 +2,8 @@
 import { ref, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
+import request from '../../api/request'
+import { PictureFilled, Loading } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,6 +16,13 @@ const chatContainer = ref(null)
 const textareaRef = ref(null)
 const isDarkMode = ref(false)
 const sidebarCollapsed = ref(false)
+
+// 图片分析相关状态
+const fileInputRef = ref(null)
+const analyzingImage = ref(false)
+const pendingQuestions = ref([])
+const waitingForAnswers = ref(false)
+const currentSessionId = ref(`sess_${Date.now()}`)
 
 const historyList = ref([
     { id: 1, title: '头痛症状咨询', time: '今天 14:30' },
@@ -44,6 +53,12 @@ const handleSend = async () => {
     const text = inputText.value.trim()
     if (!text || loading.value) return
     
+    // 如果正在等待回答，处理患者回答
+    if (waitingForAnswers.value) {
+        await handlePatientAnswer(text)
+        return
+    }
+    
     inputText.value = ''
     addMessage(text, true)
     loading.value = true
@@ -68,6 +83,132 @@ const handleSend = async () => {
             textareaRef.value.focus()
         }
     }, 800 + Math.random() * 1200)
+}
+
+// 图片上传相关方法
+const triggerFileInput = () => {
+    fileInputRef.value?.click()
+}
+
+const handleImageUpload = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    // 检查文件类型
+    if (!file.type.startsWith('image/')) {
+        addMessage('请选择图片文件（JPG/PNG/GIF）', false)
+        return
+    }
+
+    // 检查文件大小（10MB）
+    if (file.size > 10 * 1024 * 1024) {
+        addMessage('图片大小不能超过10MB', false)
+        return
+    }
+
+    analyzingImage.value = true
+    addMessage(`正在分析图片: ${file.name}`, true)
+
+    try {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('session_id', currentSessionId.value)
+
+        const response = await request.post('/wound/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        })
+
+        const data = response.data
+
+        if (data.need_confirmation && data.image_valid) {
+            // 显示图片预览和确认问题
+            pendingQuestions.value = data.questions || []
+            waitingForAnswers.value = true
+            
+            let questionText = `📷 图片已接收并完成初步分析\n\n`
+            questionText += `**初步发现：**\n`
+            if (data.preliminary_findings?.suspected_body_part) {
+                questionText += `- 可能部位：${data.preliminary_findings.suspected_body_part}\n`
+                questionText += `- 置信度：${data.preliminary_findings.suspected_body_part_confidence}\n`
+            }
+            
+            questionText += `\n**请回答以下问题以帮助我更准确地评估：**\n\n`
+            data.questions.forEach((q, i) => {
+                questionText += `${i + 1}. ${q.question}\n`
+            })
+            questionText += `\n请直接输入您的回答即可。`
+
+            addMessage(questionText, false)
+        } else if (!data.image_valid) {
+            addMessage(`⚠️ 无法识别该图片：${data.invalid_reason || '请重新上传清晰的伤口照片'}`, false)
+        }
+        
+    } catch (error) {
+        console.error('图片分析失败:', error)
+        addMessage('图片分析失败，请稍后重试', false)
+    } finally {
+        analyzingImage.value = false
+        event.target.value = '' // 重置文件输入
+    }
+}
+
+const handlePatientAnswer = async (answer) => {
+    inputText.value = ''
+    addMessage(answer, true)
+    loading.value = true
+
+    try {
+        // 构建答案对象
+        const answers = {}
+        pendingQuestions.value.forEach((q, i) => {
+            answers[String(i)] = answer
+        })
+
+        const response = await request.post('/wound/answers', {
+            session_id: currentSessionId.value,
+            answers: answers
+        })
+
+        const data = response.data
+
+        let resultText = '📋 **伤口评估报告**\n\n'
+        
+        if (data.wound_assessment) {
+            const wa = data.wound_assessment
+            resultText += `**确认部位：** ${wa.confirmed_body_part}\n\n`
+            
+            if (wa.wound_assessment) {
+                resultText += `**外观描述：** ${wa.wound_assessment.appearance}\n`
+                resultText += `**渗液情况：** ${wa.wound_assessment.exudate}\n`
+                resultText += `**周围皮肤：** ${wa.wound_assessment.surrounding_skin}\n`
+            }
+            
+            resultText += `\n**愈合状态：** ${wa.healing_status}\n`
+            
+            if (wa.risk_alerts?.length > 0) {
+                resultText += `\n⚠️ **风险提示：**\n`
+                wa.risk_alerts.forEach(alert => {
+                    resultText += `- ${alert}\n`
+                })
+            }
+            
+            if (wa.recommendation) {
+                resultText += `\n💡 **建议措施：** ${wa.recommendation}\n`
+            }
+        }
+
+        addMessage(resultText, false)
+        
+        // 重置状态
+        waitingForAnswers.value = false
+        pendingQuestions.value = []
+        
+    } catch (error) {
+        console.error('处理回答失败:', error)
+        addMessage('处理失败，请稍后重试', false)
+    } finally {
+        loading.value = false
+    }
 }
 
 const handleKeyDown = (e) => {
@@ -111,7 +252,7 @@ const goToProfile = () => {
 
 const logout = () => {
     authStore.logout()
-    router.push({ name: 'patient-login' })
+    router.push({ name: 'login' })
 }
 
 onMounted(() => {
@@ -259,11 +400,29 @@ onMounted(() => {
 
       <footer class="ds-footer">
         <div class="input-box">
+          <input
+            type="file"
+            ref="fileInputRef"
+            @change="handleImageUpload"
+            accept="image/*"
+            style="display: none"
+          />
+          
+          <button 
+            class="image-btn" 
+            @click="triggerFileInput"
+            :disabled="loading || analyzingImage"
+            title="上传伤口图片"
+          >
+            <el-icon v-if="!analyzingImage"><PictureFilled /></el-icon>
+            <el-icon v-else class="loading-icon"><Loading /></el-icon>
+          </button>
+          
           <textarea 
             ref="textareaRef"
             v-model="inputText"
             @keydown="handleKeyDown"
-            placeholder="输入您的症状或问题..."
+            :placeholder="waitingForAnswers ? '请回答上述问题...' : '输入您的症状或问题...'"
             rows="2"
             :disabled="loading"
           ></textarea>
@@ -933,6 +1092,52 @@ onMounted(() => {
 .send-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+}
+
+.image-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.image-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.dark-mode .image-btn {
+    background: rgba(255,255,255,0.08);
+    color: #8e8ea0;
+}
+.dark-mode .image-btn:hover:not(:disabled) {
+    background: rgba(79,140,255,0.15);
+    color: #4f8cff;
+}
+
+.light-mode .image-btn {
+    background: #f5f5f5;
+    color: #666;
+}
+.light-mode .image-btn:hover:not(:disabled) {
+    background: #e8e8e8;
+    color: #1677ff;
+}
+
+.loading-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 
 .dark-mode .send-btn {

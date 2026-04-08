@@ -49,7 +49,13 @@ const createAppointment = () => {
 
 const cancelAppointment = async (id) => {
     if (confirm('确定要取消这个预约吗？')) {
-        appointments.value = appointments.value.filter(a => a.id !== id)
+        try {
+            await request.delete(`/appointments/${id}`)
+            appointments.value = appointments.value.filter(a => a.id !== id)
+        } catch (err) {
+            console.error('取消预约失败', err)
+            alert('取消预约失败，请重试')
+        }
     }
 }
 

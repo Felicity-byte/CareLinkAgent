@@ -1,12 +1,12 @@
 from tortoise import models, fields
-from tortoise.contrib.pydantic import pydantic_creator
+from tortoise.contrib.pydantic import pydantic_model_creator
 from datetime import datetime
 import uuid
 
 
 class MedicalImage(models.Model):
     """医疗图片记录表"""
-    
+
     id = fields.CharField(max_length=36, pk=True, default=lambda: str(uuid.uuid4()))
     session_id = fields.CharField(max_length=36, index=True)
     file_path = fields.CharField(max_length=500, description="相对路径")
@@ -15,21 +15,19 @@ class MedicalImage(models.Model):
     upload_time = fields.DatetimeField(auto_now_add=True)
     image_type = fields.CharField(max_length=50, default="wound", description="图片类型: wound/medical_record")
     analysis_result = fields.JSONField(null=True, description="图片分析结果JSON")
-    
+
     class Meta:
         table = "medical_images"
         description = "医疗图片记录表"
-    
+
     def __str__(self):
         return f"MedicalImage({self.file_name})"
 
 
 # Pydantic Schema
-MedicalImage_Pydantic = pydantic_creator(
-    "medical_image",
+MedicalImage_Pydantic = pydantic_model_creator(
     MedicalImage,
-    exclude=["id"],
-    compute=["upload_time"]
+    exclude=["id"]
 )
 
 

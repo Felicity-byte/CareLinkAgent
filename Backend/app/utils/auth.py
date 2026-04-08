@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
 import bcrypt
@@ -6,41 +6,27 @@ from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from config import settings
 
-# HTTP Bearer 认证
 security = HTTPBearer()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """验证密码
-
-    密码只包含ASCII字符（英文字母、数字、半角符号）
-    bcrypt默认只接受前72字节的密码，超过部分会被忽略
-    """
-    # 确保密码是ASCII字符串并截断到72字节以内，与哈希时保持一致
     truncated_password = plain_password.encode('ascii', errors='ignore').decode('ascii')[:72]
-    # 使用bcrypt直接验证
     return bcrypt.checkpw(truncated_password.encode('ascii'), hashed_password.encode('ascii'))
-def get_password_hash(password: str) -> str:
-    """获取密码哈希
 
-    密码只包含ASCII字符（英文字母、数字、半角符号）
-    bcrypt默认只接受前72字节的密码，超过部分会被忽略
-    """
-    # 确保密码是ASCII字符串并截断到72字节以内
+
+def get_password_hash(password: str) -> str:
     truncated_password = password.encode('ascii', errors='ignore').decode('ascii')[:72]
-    # 使用bcrypt直接哈希
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(truncated_password.encode('ascii'), salt)
     return hashed.decode('ascii')
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """创建访问令牌"""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(
+        expire = datetime.now(timezone.utc) + timedelta(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
     to_encode.update({"exp": expire})
@@ -51,10 +37,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 
 def create_refresh_token(data: dict) -> str:
-    """创建刷新令牌（7天有效期）"""
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=7)
-    to_encode.update({"exp": expire, "type": "refresh"})
+    expire = datetime.now(timezone.utc) + timedelta(days=7)
+    to_encode.update({"exp": expire, "token_type": "refresh"})
     encoded_jwt = jwt.encode(
         to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
     )
@@ -62,7 +47,6 @@ def create_refresh_token(data: dict) -> str:
 
 
 def verify_token(token: str) -> dict:
-    """验证令牌"""
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
@@ -79,16 +63,21 @@ def verify_token(token: str) -> dict:
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> dict:
-    """获取当前用户（仅验证 JWT token）"""
     token = credentials.credentials
     
     try:
         payload = verify_token(token)
     except HTTPException:
-        # 重新抛出更友好的错误消息
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="登录已过期或无效，请重新登录",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if payload.get("token_type") == "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="不能使用刷新令牌访问接口",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -105,11 +94,7 @@ def get_current_user(
     return {"user_id": user_id, "user_type": user_type}
 
 
-
-
-
 def get_current_doctor(current_user: dict = Depends(get_current_user)) -> dict:
-    """获取当前医生"""
     if current_user.get("user_type") != "doctor":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

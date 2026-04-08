@@ -5,6 +5,7 @@ from app.database_tortoise import get_db
 from app.models.doctor import Doctor
 from app.models.department import Department
 from app.models.user import User
+from app.models.ai_diagnosis_report import AIDiagnosisReport
 from app.schemas.doctor import DoctorLogin, DoctorReport
 from app.utils import (
     get_password_hash,
@@ -67,8 +68,8 @@ async def doctor_register(
 
 @router.post("/login")
 async def doctor_login(
-    phone_number: str = Query(..., description="手机号"),
-    password: str = Query(..., description="密码"),
+    phone_number: str = Form(..., description="手机号"),
+    password: str = Form(..., description="密码"),
     db = Depends(get_db)
 ):
     """医生登录"""
@@ -126,11 +127,11 @@ async def refresh_token(
             algorithms=[settings.ALGORITHM]
         )
 
-        if payload.get("type") != "refresh":
+        if payload.get("token_type") != "refresh":
             return error_response(code="10005", msg="无效的刷新令牌")
 
         doctor_id = payload.get("sub")
-        user_type = payload.get("type")
+        user_type = payload.get("type", "doctor")
 
         if user_type == "doctor":
             doctor = await Doctor.filter(id=doctor_id, deleted_at__isnull=True).first()
@@ -244,3 +245,61 @@ async def list_patients(
         })
 
     return success_response(data=patient_list)
+
+
+@router.post("/report")
+async def submit_diagnosis_report(
+    record_id: str = Form(..., description="记录ID"),
+    text: str = Form(..., description="诊断内容"),
+    current_doctor: dict = Depends(get_current_doctor),
+    db = Depends(get_db)
+):
+    """医生提交诊断报告"""
+    from datetime import datetime
+    
+    report = await AIDiagnosisReport.filter(id=record_id).first()
+    
+    if not report:
+        return error_response(code="40001", msg="诊断记录不存在")
+    
+    report.suggestions = text
+    report.doctor_id = current_doctor["user_id"]
+    report.report_status = "reviewed"
+    report.reviewed_at = datetime.now()
+    await report.save()
+    
+    return success_response(msg="诊断报告提交成功", data={
+        "id": report.id,
+        "status": report.report_status
+    })
+
+
+@router.get("/summary/{record_id}")
+async def get_patient_summary(
+    record_id: str,
+    current_doctor: dict = Depends(get_current_doctor),
+    db = Depends(get_db)
+):
+    """获取患者诊断详情"""
+    report = await AIDiagnosisReport.filter(id=record_id).first()
+    
+    if not report:
+        return error_response(code="40001", msg="诊断记录不存在")
+    
+    patient = await User.filter(id=report.patient_id).first()
+    
+    return success_response(data={
+        "record_id": report.id,
+        "patient": {
+            "id": patient.id if patient else None,
+            "username": patient.username if patient else None,
+            "phone_number": patient.phone_number if patient else None
+        },
+        "chief_complaint": report.chief_complaint,
+        "symptoms": report.symptoms,
+        "possible_diagnosis": report.possible_diagnosis,
+        "suggestions": report.suggestions,
+        "severity": report.severity,
+        "status": report.report_status,
+        "created_at": report.created_at.strftime("%Y-%m-%d %H:%M:%S") if report.created_at else None
+    })

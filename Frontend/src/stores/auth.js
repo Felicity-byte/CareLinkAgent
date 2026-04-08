@@ -42,8 +42,14 @@ export const useAuthStore = defineStore('auth', {
         // 医生登录
         async doctorLogin(username, password) {
             try {
-                const res = await request.post('/doctor/login', null, {
-                    params: { phone_number: username, password }
+                const formData = new URLSearchParams()
+                formData.append('phone_number', username)
+                formData.append('password', password)
+
+                const res = await request.post('/doctor/login', formData, {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
                 })
 
                 const data = res.data

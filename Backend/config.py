@@ -30,7 +30,8 @@ class Settings(BaseSettings):
 
     # AI服务配置
     GLM_API_KEY: str
-    AI_SERVICE_HOST: str = "127.0.0.1:50051"
+    GLM_4V_API_KEY: str = ""  # glm-4v-flash 图片分析 API Key
+    AI_SERVICE_HOST: str = "127.0.0.1:50053"  # gRPC 服务端口（与 server.py 保持一致）
 
     class Config:
         env_file = ".env"

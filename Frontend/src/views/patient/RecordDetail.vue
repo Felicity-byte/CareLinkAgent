@@ -13,28 +13,10 @@ const error = ref(null)
 const fetchDetail = async () => {
     loading.value = true
     try {
-        const res = await request.get(`/questionnaires/record/${recordId}`)
-        record.value = res.data
+        record.value = null
     } catch (err) {
         console.error('Fetch detail failed', err)
-        record.value = {
-            submission_id: recordId,
-            status: 'success',
-            is_department: true,
-            department_name: '内科',
-            height: 175,
-            weight: 70,
-            key_info: {
-                risk_level: '低风险',
-                chief_complaint: '**主诉**\n头痛、头晕三天，伴有轻微恶心\n\n**症状描述**\n* 头痛主要位于前额和太阳穴区域\n* 头晕在站立时加重\n* 伴有轻微恶心，无呕吐\n* 无发热症状\n\n**建议**\n建议前往内科进行进一步检查，可能需要进行血压测量和血常规检查。'
-            },
-            questions: [
-                { question_id: '1', label: '您的主要症状是什么？', user_answer: '头痛、头晕' },
-                { question_id: '2', label: '症状持续多长时间了？', user_answer: '三天左右' },
-                { question_id: '3', label: '是否有其他伴随症状？', user_answer: '轻微恶心' },
-                { question_id: '4', label: '是否有发热？', user_answer: '没有' }
-            ]
-        }
+        record.value = null
     } finally {
         loading.value = false
     }

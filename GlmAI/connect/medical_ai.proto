@@ -117,6 +117,96 @@ message ChatMessage {
   string timestamp = 3;
 }
 
+// ==========================
+// 6. 伤口图片分析接口
+// ==========================
+
+// 图片分析请求
+message AnalyzeWoundImageRequest {
+  string session_id = 1;        // 会话ID
+  string image_base64 = 2;      // Base64编码的图片数据
+}
+
+// 确认问题
+message ConfirmQuestion {
+  string question = 1;          // 问题内容
+  string reason = 2;            // 提问原因
+}
+
+// 初步分析结果
+message PreliminaryAnalysis {
+  string suspected_body_part = 1;           // 可能的身体部位
+  string suspected_body_part_confidence = 2; // 置信度（高/中/低）
+  repeated string visible_features = 3;     // 可见特征
+  repeated string uncertain_items = 4;       // 不确定项
+}
+
+// 图片分析响应
+message AnalyzeWoundImageResponse {
+  bool success = 1;              // 是否成功
+  string error = 2;              // 错误信息（失败时）
+  bool need_confirmation = 3;    // 是否需要确认
+  bool image_valid = 4;          // 图片是否有效
+  string invalid_reason = 5;     // 无效原因
+  string image_url = 6;          // 图片存储路径
+  repeated ConfirmQuestion questions = 7;    // 确认问题列表
+  PreliminaryAnalysis preliminary_findings = 8;  // 初步发现
+  string created_at = 9;         // 创建时间
+}
+
+// 患者回答请求
+message ProcessPatientAnswersRequest {
+  string session_id = 1;                    // 会话ID
+  map<string, string> answers = 2;          // 患者回答 {问题索引: 回答}
+}
+
+// 伤口评估详情
+message WoundAssessmentDetail {
+  string location = 1;           // 部位
+  string onset_time = 2;         // 起病时间
+  string pain_score = 3;         // 疼痛评分
+  string pain_description = 4;   // 疼痛描述
+  string appearance = 5;         // 外观
+  string exudate = 6;            // 渗液情况
+  string surrounding_skin = 7;   // 周围皮肤情况
+  repeated string inflammation_signs = 8;  // 炎症体征
+}
+
+// 图片信息
+message ImageInfo {
+  string url = 1;                // 相对路径
+  string upload_time = 2;        // 上传时间
+  string image_type = 3;         // 图片类型
+  ImageAnalysisSummary analysis = 4;  // 分析摘要
+}
+
+// 图片分析摘要
+message ImageAnalysisSummary {
+  string confirmed_body_part = 1;       // 确认的部位
+  string healing_status = 2;            // 愈合状态
+  repeated string risk_alerts = 3;      // 风险提示
+}
+
+// 完整的伤口评估结果
+message WoundAssessmentResult {
+  string confirmed_body_part = 1;
+  WoundAssessmentDetail wound_assessment = 2;
+  string healing_status = 3;
+  repeated string risk_alerts = 4;
+  string recommendation = 5;
+  string missing_info = 6;
+  string suggest_next_question = 7;
+}
+
+// 患者回答处理响应
+message ProcessPatientAnswersResponse {
+  bool success = 1;              // 是否成功
+  string error = 2;              // 错误信息
+  WoundAssessmentResult wound_assessment = 3;  // 伤口评估结果
+  ImageInfo image_info = 4;      // 图片信息
+  string final_report_json = 5;  // 最终病历JSON
+}
+
 // 5. 服务定义
 service PostSurgeryFollowUpService {
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
@@ -126,4 +216,10 @@ service PostSurgeryFollowUpService {
   rpc EndSession(EndSessionRequest) returns (EndSessionResponse);
   
   rpc GetSessionHistory(GetSessionHistoryRequest) returns (GetSessionHistoryResponse);
+  
+  // 伤口图片分析接口
+  rpc AnalyzeWoundImage(AnalyzeWoundImageRequest) returns (AnalyzeWoundImageResponse);
+  
+  // 患者回答处理接口
+  rpc ProcessPatientAnswers(ProcessPatientAnswersRequest) returns (ProcessPatientAnswersResponse);
 }
