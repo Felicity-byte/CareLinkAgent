@@ -22,10 +22,15 @@ const router = createRouter({
             redirect: '/'
         },
         {
+            path: '/doctor/workspace',
+            name: 'workspace',
+            component: () => import('../views/doctor/Workspace.vue'),
+            meta: { requiresAuth: true, role: 'doctor' }
+        },
+        {
             path: '/doctor/dashboard',
             name: 'dashboard',
-            component: () => import('../views/Dashboard.vue'),
-            meta: { requiresAuth: true, role: 'doctor' }
+            redirect: '/doctor/workspace'
         },
         {
             path: '/doctor/patient/:id',
