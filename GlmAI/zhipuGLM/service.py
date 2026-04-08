@@ -66,7 +66,7 @@ def initialize_service():
     
     try:
         # Step 1: 初始化智谱客户端
-        print("\n[Step 1/4] 正在初始化智谱AI客户端...")
+        print("\n[Step 1/5] 正在初始化智谱AI客户端...")
         api_key = os.environ.get("GLM_API_KEY")
         if not api_key:
             print("  [ERROR] 未找到 GLM_API_KEY 环境变量")
@@ -75,7 +75,8 @@ def initialize_service():
         print("  [OK] 智谱AI客户端初始化成功")
         
         # Step 2: 启动后台加载本地 RAG（术后护理文档）
-        print("\n[Step 2/4] 设置术后护理文档向量数据库（后台预加载）...")
+        print("\n[Step 2/5] 设置术后护理文档向量数据库（后台预加载）...")
+        global GLOBAL_POST_SURGERY_RAG, _rag_loaded, _rag_loading
         GLOBAL_POST_SURGERY_RAG = None
         _rag_loaded = False
         _rag_loading = True
@@ -86,7 +87,7 @@ def initialize_service():
         print("  [OK] 向量数据库正在后台加载（不影响服务器启动）")
         
         # Step 3: 初始化智谱知识库
-        print("\n[Step 3/4] 正在初始化智谱知识库...")
+        print("\n[Step 3/5] 正在初始化智谱知识库...")
         GLOBAL_ZHIPU_KNOWLEDGE = initialize_zhipu_knowledge()
         if GLOBAL_ZHIPU_KNOWLEDGE and GLOBAL_ZHIPU_KNOWLEDGE.is_available:
             print("  [OK] 智谱知识库初始化成功")
@@ -94,8 +95,20 @@ def initialize_service():
             print("  [WARNING] 智谱知识库不可用，将使用LLM自身知识")
         
         # Step 4: 初始化会话管理器
-        print("\n[Step 4/4] 正在初始化会话管理器...")
+        print("\n[Step 4/5] 正在初始化会话管理器...")
         print("  [OK] 会话管理器就绪")
+        
+        # Step 5: 初始化伤口分析服务
+        print("\n[Step 5/5] 正在初始化伤口分析服务...")
+        try:
+            from wound_analysis import initialize_wound_service
+            # 优先使用 GLM_4V_API_KEY，否则使用 GLM_API_KEY
+            api_key_4v = os.environ.get("GLM_4V_API_KEY") or os.environ.get("GLM_API_KEY")
+            initialize_wound_service(api_key_4v=api_key_4v)
+            print("  [OK] 伤口分析服务初始化完成")
+        except Exception as e:
+            print(f"  [WARNING] 伤口分析服务初始化失败: {e}")
+            print("         图片分析功能将不可用")
         
         print("\n" + "="*60)
         print("  AI 服务初始化完成!")
@@ -222,7 +235,7 @@ def create_session(patient_id: str, patient_name: str, surgery_date: str) -> dic
     session = session_mgr.session_manager.create_session(
         patient_id, patient_name, surgery_date
     )
-    
+
     return {
         "session_id": session.session_id,
         "created_at": session.created_at,
@@ -230,7 +243,65 @@ def create_session(patient_id: str, patient_name: str, surgery_date: str) -> dic
     }
 
 
-def chat_stream(session_id: str, message: str, is_end: bool = False) -> Generator[dict, None, None]:
+def is_image_message(message: str) -> bool:
+    """检测消息是否为 Base64 编码的图片"""
+    if not message or not isinstance(message, str):
+        return False
+    if len(message) < 100:
+        return False
+    if message.startswith("data:image/") or message.startswith("iVBOR") or message.startswith("/9j/"):
+        return True
+    try:
+        if "," in message:
+            potential_base64 = message.split(",", 1)[1]
+            if len(potential_base64) > 100:
+                import base64
+                base64.b64decode(potential_base64[:100])
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def get_image_base64_from_message(message: str) -> str:
+    """从消息中提取 Base64 图片数据"""
+    if "data:image/" in message and ";base64," in message:
+        return message.split(";base64,", 1)[1]
+    if "," in message:
+        return message.split(",", 1)[1]
+    return message
+
+
+def process_wound_image(session_id: str, image_base64: str) -> dict:
+    """处理伤口图片（独立于对话流）"""
+    try:
+        from wound_analysis import get_wound_analysis_service
+        wound_service = get_wound_analysis_service()
+        return wound_service.process_patient_image(session_id, image_base64)
+    except Exception as e:
+        print(f"[ERROR] 处理伤口图片失败: {str(e)}")
+        return {
+            "success": False,
+            "error": f"处理伤口图片失败: {str(e)}",
+            "need_confirmation": False
+        }
+
+
+def process_wound_answers(session_id: str, user_answers: dict) -> dict:
+    """处理患者对伤口问题的回答"""
+    try:
+        from wound_analysis import get_wound_analysis_service
+        wound_service = get_wound_analysis_service()
+        return wound_service.process_patient_answers(session_id, user_answers)
+    except Exception as e:
+        print(f"[ERROR] 处理伤口回答失败: {str(e)}")
+        return {
+            "success": False,
+            "error": f"处理伤口回答失败: {str(e)}"
+        }
+
+
+def chat_stream(session_id: str, message: str, is_end: bool = False, image_base64: str = None) -> Generator[dict, None, None]:
     """流式对话"""
     session = session_mgr.session_manager.get_session(session_id)
     if not session:
@@ -240,23 +311,74 @@ def chat_stream(session_id: str, message: str, is_end: bool = False) -> Generato
             "reference": ""
         }
         return
-    
-    # 记录患者消息
+
+    if image_base64 and is_image_message(image_base64):
+        wound_result = process_wound_image(session_id, image_base64)
+        if wound_result.get("success"):
+            if wound_result.get("need_confirmation"):
+                questions = wound_result.get("questions", [])
+                if questions:
+                    question_texts = []
+                    for i, q in enumerate(questions, 1):
+                        question_texts.append(f"{i}. {q.get('question', '')}")
+                    questions_prompt = "\n".join(question_texts)
+
+                    response_text = f"我已经收到您上传的图片，正在分析中。\n\n根据图片分析，我需要向您确认几个问题：\n{questions_prompt}\n\n请您回答以上问题，帮助我更准确地评估您的伤口情况。"
+
+                    session.add_message("patient", f"[上传了伤口图片]")
+                    session.add_message("ai", response_text)
+
+                    yield {
+                        "content": response_text,
+                        "is_final": False,
+                        "reference": "",
+                        "wound_pending": True,
+                        "image_url": wound_result.get("image_url", "")
+                    }
+
+                    yield {
+                        "content": "",
+                        "is_final": True,
+                        "reference": ""
+                    }
+                    return
+            else:
+                response_text = "感谢您上传图片。根据分析结果：\n\n" + wound_result.get("invalid_reason", "无法识别该图片")
+
+                session.add_message("patient", f"[上传了伤口图片: {wound_result.get('invalid_reason', '无效图片')}]")
+                session.add_message("ai", response_text)
+
+                yield {
+                    "content": response_text,
+                    "is_final": True,
+                    "reference": "",
+                    "wound_invalid": True,
+                    "invalid_reason": wound_result.get("invalid_reason", "")
+                }
+                return
+        else:
+            error_msg = wound_result.get("error", "图片处理失败")
+            yield {
+                "content": f"图片处理失败：{error_msg}",
+                "is_final": True,
+                "reference": "",
+                "error": error_msg
+            }
+            return
+
     session.add_message("patient", message)
-    
-    # 阶段1：确认手术类型
+
     if session.status == session_mgr.SessionStatus.WAITING_SURGERY:
-        # 尝试识别手术类型
         surgery_type = extract_surgery_type(message)
         if surgery_type:
             session.set_surgery_type(surgery_type)
-            
+
             response_text = prompts.SURGERY_CONFIRMED_PROMPT.format(
                 SurgeryType=surgery_type
             )
-            
+
             session.add_message("ai", response_text)
-            
+
             yield {
                 "content": response_text,
                 "is_final": False,
@@ -264,22 +386,26 @@ def chat_stream(session_id: str, message: str, is_end: bool = False) -> Generato
             }
         else:
             response_text = "抱歉，我没有识别出您说的手术类型。请告诉我您做的是什么手术？例如：阑尾切除手术、胆囊切除术等。"
-            
+
             session.add_message("ai", response_text)
-            
+
             yield {
                 "content": response_text,
                 "is_final": False,
                 "reference": ""
             }
+
+        yield {
+            "content": "",
+            "is_final": True,
+            "reference": ""
+        }
         return
-    
-    # 阶段2-3：症状收集 / 结束对话
+
     if is_end or should_end_conversation(session):
         yield from end_chat_stream(session)
         return
-    
-    # 正常对话流程 - 混合检索 + LLM 回复
+
     yield from normal_chat_stream(session, message)
 
 

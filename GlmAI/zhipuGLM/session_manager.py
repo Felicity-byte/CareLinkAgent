@@ -27,11 +27,35 @@ class Session:
         self.conversation: List[ChatMessage] = []
         self.created_at = datetime.now().isoformat()
         self.ended_at: Optional[str] = None
+        self.pending_image_analysis: Optional[Dict[str, Any]] = None
+        self.uploaded_images: List[Dict[str, Any]] = []
+        self.final_report: Optional[Dict[str, Any]] = None
 
     def add_message(self, role: str, content: str):
         message = ChatMessage(role, content)
         self.conversation.append(message)
         return message
+
+    def set_pending_image_analysis(self, analysis_data: Dict[str, Any]):
+        self.pending_image_analysis = analysis_data
+
+    def get_pending_image_analysis(self) -> Optional[Dict[str, Any]]:
+        return self.pending_image_analysis
+
+    def clear_pending_image_analysis(self):
+        self.pending_image_analysis = None
+
+    def add_uploaded_image(self, image_info: Dict[str, Any]):
+        self.uploaded_images.append(image_info)
+
+    def get_uploaded_images(self) -> List[Dict[str, Any]]:
+        return self.uploaded_images
+
+    def set_final_report(self, report: Dict[str, Any]):
+        self.final_report = report
+
+    def get_final_report(self) -> Optional[Dict[str, Any]]:
+        return self.final_report
 
     def set_surgery_type(self, surgery_type: str):
         self.surgery_type = surgery_type
@@ -68,8 +92,7 @@ class SessionManager:
 
     def get_session(self, session_id: str) -> Optional[Session]:
         session = self.sessions.get(session_id)
-        if session and session.status == SessionStatus.ACTIVE:
-            # 检查是否超时
+        if session and session.status in [SessionStatus.ACTIVE, SessionStatus.WAITING_SURGERY]:
             created_time = datetime.fromisoformat(session.created_at)
             if (datetime.now() - created_time).total_seconds() > self.session_timeout:
                 session.cancel()
