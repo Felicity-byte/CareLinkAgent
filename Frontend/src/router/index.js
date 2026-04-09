@@ -51,32 +51,9 @@ const router = createRouter({
             meta: { requiresAuth: true, role: 'doctor' }
         },
         {
-            path: '/patient/register',
-            name: 'patient-register',
-            component: () => import('../views/patient/Register.vue')
-        },
-        {
-            path: '/patient/bind-info',
-            name: 'patient-bind',
-            component: () => import('../views/patient/BindInfo.vue'),
-            meta: { requiresAuth: true, role: 'patient' }
-        },
-        {
             path: '/patient/history',
             name: 'patient-history',
             component: () => import('../views/patient/HistoryList.vue'),
-            meta: { requiresAuth: true, role: 'patient' }
-        },
-        {
-            path: '/patient/record/:id',
-            name: 'record-detail',
-            component: () => import('../views/patient/RecordDetail.vue'),
-            meta: { requiresAuth: true, role: 'patient' }
-        },
-        {
-            path: '/patient/home',
-            name: 'patient-home',
-            component: () => import('../views/patient/Home.vue'),
             meta: { requiresAuth: true, role: 'patient' }
         },
         {
@@ -113,7 +90,7 @@ router.beforeEach((to, from, next) => {
             return
         }
         if (to.meta.role && authStore.role !== to.meta.role) {
-            next({ name: authStore.role === 'doctor' ? 'workspace' : 'patient-home' })
+            next({ name: authStore.role === 'doctor' ? 'workspace' : 'ai-chat' })
             return
         }
     }

@@ -1,134 +1,186 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
-const records = ref([])
-const loading = ref(true)
-const error = ref(null)
 
-const fetchRecords = async () => {
-    loading.value = true
-    error.value = null
-    try {
-        records.value = []
-    } catch (err) {
-        console.error('Fetch history failed', err)
-        records.value = []
-    } finally {
-        loading.value = false
+const notifications = ref([
+    {
+        id: 1,
+        type: 'appointment',
+        title: '预约提醒',
+        content: '您预约的内科门诊将于明天上午9:00开始，请准时就诊。',
+        detail: '门诊楼3楼内科诊室 · 携带身份证和医保卡',
+        time: new Date(Date.now() - 1000 * 60 * 30),
+        read: false
+    },
+    {
+        id: 2,
+        type: 'system',
+        title: '健康档案更新',
+        content: '您的健康档案已更新完成，可以在个人中心查看详细信息。',
+        time: new Date(Date.now() - 1000 * 60 * 60 * 24),
+        read: true
+    },
+    {
+        id: 3,
+        type: 'appointment',
+        title: '就诊提醒',
+        content: '您有一个预约将在后天进行，请注意时间安排。',
+        time: new Date(Date.now() - 1000 * 60 * 60 * 48),
+        read: false
+    },
+    {
+        id: 4,
+        type: 'system',
+        title: '系统维护通知',
+        content: '系统将于本周六凌晨2:00-4:00进行维护升级，届时部分功能可能无法使用。',
+        time: new Date(Date.now() - 1000 * 60 * 60 * 72),
+        read: true
     }
-}
+])
 
-const goToDetail = (recordId) => {
-    router.push({ name: 'record-detail', params: { id: recordId } })
-}
+const activeTab = ref('all')
+
+const unreadCount = computed(() => {
+    return notifications.value.filter(n => !n.read).length
+})
+
+const filteredNotifications = computed(() => {
+    if (activeTab.value === 'unread') {
+        return notifications.value.filter(n => !n.read)
+    }
+    return notifications.value
+})
 
 const goBack = () => {
-    router.push({ name: 'patient-home' })
+    router.push({ name: 'ai-chat' })
 }
 
-const formatDate = (dateStr) => {
-    if (!dateStr) return ''
-    const date = new Date(dateStr)
-    const now = new Date()
-    const diff = now - date
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-    
-    if (days === 0) {
-        return '今天 ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-    } else if (days === 1) {
-        return '昨天 ' + date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-    } else if (days < 7) {
-        return `${days}天前`
-    } else {
-        return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+const markAsRead = (id) => {
+    const notification = notifications.value.find(n => n.id === id)
+    if (notification) {
+        notification.read = true
     }
 }
 
-onMounted(() => {
-    fetchRecords()
-})
+const markAllAsRead = () => {
+    notifications.value.forEach(n => n.read = true)
+}
+
+const formatTime = (date) => {
+    const now = new Date()
+    const diff = now - date
+    const minutes = Math.floor(diff / (1000 * 60))
+    const hours = Math.floor(diff / (1000 * 60 * 60))
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    
+    if (minutes < 1) return '刚刚'
+    if (minutes < 60) return `${minutes}分钟前`
+    if (hours < 24) return `${hours}小时前`
+    if (days < 7) return `${days}天前`
+    return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+}
+
+const getTypeInfo = (type) => {
+    const types = {
+        appointment: { 
+            icon: 'Calendar', 
+            color: '#1677ff', 
+            bg: 'linear-gradient(135deg, #1677ff 0%, #4096ff 100%)',
+            label: '预约' 
+        },
+        system: { 
+            icon: 'Bell', 
+            color: '#722ed1', 
+            bg: 'linear-gradient(135deg, #722ed1 0%, #9254de 100%)',
+            label: '系统' 
+        }
+    }
+    return types[type] || { icon: 'Document', color: '#666', bg: '#666', label: '通知' }
+}
 </script>
 
 <template>
-  <div class="history-page">
+  <div class="notification-page">
     <header class="page-header">
       <button class="back-btn" @click="goBack">
         <el-icon><ArrowLeft /></el-icon>
-        <span>返回</span>
       </button>
-      <h1 class="page-title">历史问诊</h1>
-      <div class="header-right"></div>
+      <div class="header-center">
+        <h1 class="page-title">消息通知</h1>
+        <span v-if="unreadCount > 0" class="unread-count">{{ unreadCount }}条未读</span>
+      </div>
+      <button v-if="unreadCount > 0" class="mark-all-btn" @click="markAllAsRead">
+        全部已读
+      </button>
     </header>
 
-    <main class="page-content">
-      <div v-if="loading" class="loading-state">
-        <el-icon class="animate-spin text-4xl"><Loading /></el-icon>
-        <p class="mt-4">正在加载记录...</p>
-      </div>
-
-      <div v-else-if="error" class="error-state">
-        <el-icon class="text-4xl"><WarningFilled /></el-icon>
-        <p class="mt-4">{{ error }}</p>
-        <button @click="fetchRecords" class="retry-btn">重试</button>
-      </div>
-
-      <div v-else-if="records.length === 0" class="empty-state">
-        <el-icon class="text-5xl"><DocumentRemove /></el-icon>
-        <p class="mt-4">暂无历史问诊记录</p>
-        <button @click="router.push({ name: 'ai-chat' })" class="start-btn">
-          <el-icon><Plus /></el-icon>
-          <span>开始导诊</span>
+    <div class="tabs-wrapper">
+      <div class="tabs">
+        <button 
+          class="tab-btn" 
+          :class="{ active: activeTab === 'all' }"
+          @click="activeTab = 'all'"
+        >
+          全部消息
+          <span class="tab-count">{{ notifications.length }}</span>
+        </button>
+        <button 
+          class="tab-btn" 
+          :class="{ active: activeTab === 'unread' }"
+          @click="activeTab = 'unread'"
+        >
+          未读消息
+          <span v-if="unreadCount > 0" class="tab-count highlight">{{ unreadCount }}</span>
         </button>
       </div>
+    </div>
 
-      <div v-else class="records-container">
-        <div class="records-header">
-          <h2>全部问诊记录</h2>
-          <span class="record-count">共 {{ records.length }} 条</span>
+    <main class="page-content">
+      <div v-if="filteredNotifications.length === 0" class="empty-state">
+        <div class="empty-illustration">
+          <div class="empty-circle">
+            <el-icon class="empty-icon"><Bell /></el-icon>
+          </div>
+          <div class="empty-dots">
+            <span></span><span></span><span></span>
+          </div>
         </div>
-        
-        <div class="records-list">
-          <div 
-            v-for="record in records" 
-            :key="record.record_id" 
-            class="record-card"
-            @click="goToDetail(record.record_id)"
-          >
-            <div class="record-header">
-              <div class="record-dept">
-                <el-icon class="dept-icon"><OfficeBuilding /></el-icon>
-                <span>{{ record.department_name || '待分诊' }}</span>
-              </div>
-              <span class="record-time">{{ formatDate(record.created_at) }}</span>
+        <h3 class="empty-title">暂无消息</h3>
+        <p class="empty-desc">新的消息会在这里显示</p>
+      </div>
+
+      <div v-else class="notification-list">
+        <div 
+          v-for="notification in filteredNotifications" 
+          :key="notification.id" 
+          class="notification-item"
+          :class="{ unread: !notification.read }"
+          @click="markAsRead(notification.id)"
+        >
+          <div class="item-indicator" v-if="!notification.read"></div>
+          
+          <div class="item-icon" :style="{ background: getTypeInfo(notification.type).bg }">
+            <el-icon v-if="notification.type === 'appointment'"><Calendar /></el-icon>
+            <el-icon v-else-if="notification.type === 'system'"><Bell /></el-icon>
+            <el-icon v-else><Document /></el-icon>
+          </div>
+          
+          <div class="item-content">
+            <div class="item-header">
+              <span class="item-type" :style="{ color: getTypeInfo(notification.type).color }">
+                {{ getTypeInfo(notification.type).label }}
+              </span>
+              <span class="item-time">{{ formatTime(notification.time) }}</span>
             </div>
-            
-            <div class="record-title">
-              {{ record.questionnaire_title || '智能导诊' }}
-            </div>
-            
-            <div v-if="record.ai_result?.key_info" class="record-summary">
-              <span class="summary-label">主诉：</span>
-              <span class="summary-text">{{ record.ai_result.key_info['主诉'] || '无详细描述' }}</span>
-            </div>
-            
-            <div class="record-footer">
-              <div class="record-status">
-                <span 
-                  class="status-dot"
-                  :class="{
-                    'status-waiting': record.status_code === 'waiting',
-                    'status-completed': record.status_code === 'completed'
-                  }"
-                ></span>
-                <span class="status-text">{{ record.status }}</span>
-              </div>
-              <div class="record-action">
-                <span>查看详情</span>
-                <el-icon><ArrowRight /></el-icon>
-              </div>
-            </div>
+            <h3 class="item-title">{{ notification.title }}</h3>
+            <p class="item-text">{{ notification.content }}</p>
+            <p v-if="notification.detail" class="item-detail">{{ notification.detail }}</p>
+          </div>
+          
+          <div class="item-action">
+            <el-icon><ArrowRight /></el-icon>
           </div>
         </div>
       </div>
@@ -137,28 +189,97 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.history-page {
+.notification-page {
     min-height: 100vh;
-    background: #fff;
+    background: #f5f7fa;
 }
 
 .page-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 16px 24px;
+    padding: 12px 16px;
     background: #fff;
-    border-bottom: 1px solid #e5e5e5;
     position: sticky;
     top: 0;
-    z-index: 10;
+    z-index: 100;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
 }
 
 .back-btn {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 10px;
+    background: #f5f5f5;
+    color: #333;
+    font-size: 18px;
+    cursor: pointer;
     display: flex;
     align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.back-btn:hover {
+    background: #e8e8e8;
+}
+
+.header-center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.page-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin: 0;
+}
+
+.unread-count {
+    font-size: 11px;
+    color: #1677ff;
+    font-weight: 500;
+}
+
+.mark-all-btn {
+    padding: 6px 14px;
+    border: none;
+    border-radius: 16px;
+    background: #1677ff;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.mark-all-btn:hover {
+    background: #0958d9;
+}
+
+.tabs-wrapper {
+    background: #fff;
+    padding: 0 16px 12px;
+}
+
+.tabs {
+    display: flex;
+    background: #f5f5f5;
+    border-radius: 10px;
+    padding: 3px;
+}
+
+.tab-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     gap: 6px;
-    padding: 8px 12px;
+    padding: 10px 16px;
     border: none;
     border-radius: 8px;
     background: transparent;
@@ -168,239 +289,228 @@ onMounted(() => {
     transition: all 0.2s;
 }
 
-.back-btn:hover {
-    background: #f5f5f5;
-    color: #333;
-}
-
-.back-btn .el-icon {
-    font-size: 20px;
-}
-
-.page-title {
-    font-size: 18px;
-    font-weight: 600;
+.tab-btn.active {
+    background: #fff;
     color: #1a1a1a;
+    font-weight: 500;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-.header-right {
-    width: 80px;
+.tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: #e0e0e0;
+    color: #666;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.tab-count.highlight {
+    background: #ff4d4f;
+    color: #fff;
 }
 
 .page-content {
-    padding: 24px;
-    max-width: 900px;
+    padding: 12px;
+    max-width: 600px;
     margin: 0 auto;
 }
 
-.loading-state,
-.error-state,
 .empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 400px;
-    color: #999;
+    padding: 80px 20px;
 }
 
-.retry-btn {
-    margin-top: 16px;
-    padding: 10px 24px;
-    border-radius: 8px;
-    border: none;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    background: #4f8cff;
-    color: #fff;
-    transition: all 0.2s;
+.empty-illustration {
+    position: relative;
+    margin-bottom: 24px;
 }
 
-.retry-btn:hover {
-    background: #3d7ae8;
-}
-
-.start-btn {
-    margin-top: 24px;
+.empty-circle {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f0f5ff 0%, #e6f4ff 100%);
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 14px 28px;
-    border-radius: 12px;
-    border: none;
-    font-size: 15px;
-    font-weight: 500;
-    cursor: pointer;
-    background: #4f8cff;
-    color: #fff;
-    transition: all 0.2s;
+    justify-content: center;
 }
 
-.start-btn:hover {
-    background: #3d7ae8;
+.empty-icon {
+    font-size: 48px;
+    color: #1677ff;
+    opacity: 0.6;
 }
 
-.records-container {
-    max-width: 900px;
-    margin: 0 auto;
-}
-
-.records-header {
+.empty-dots {
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 20px;
+    gap: 6px;
 }
 
-.records-header h2 {
-    font-size: 20px;
+.empty-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #1677ff;
+    opacity: 0.3;
+}
+
+.empty-dots span:nth-child(2) {
+    opacity: 0.5;
+}
+
+.empty-dots span:nth-child(3) {
+    opacity: 0.7;
+}
+
+.empty-title {
+    font-size: 17px;
     font-weight: 600;
     color: #1a1a1a;
+    margin: 0 0 8px;
 }
 
-.record-count {
+.empty-desc {
     font-size: 14px;
     color: #999;
+    margin: 0;
 }
 
-.records-list {
+.notification-list {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-}
-
-.record-card {
-    padding: 20px;
-    border-radius: 16px;
-    cursor: pointer;
-    transition: all 0.2s;
-    background: #fff;
-    border: 1px solid #e5e5e5;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-
-.record-card:hover {
-    border-color: #4f8cff;
-    box-shadow: 0 4px 12px rgba(79, 140, 255, 0.1);
-}
-
-.record-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-}
-
-.record-dept {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 13px;
-    font-weight: 500;
-    background: rgba(79, 140, 255, 0.1);
-    color: #4f8cff;
-}
-
-.dept-icon {
-    font-size: 16px;
-}
-
-.record-time {
-    font-size: 13px;
-    color: #999;
-}
-
-.record-title {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 12px;
-    color: #1a1a1a;
-}
-
-.record-summary {
-    padding: 12px;
-    border-radius: 8px;
-    font-size: 14px;
-    line-height: 1.6;
-    margin-bottom: 12px;
-    background: #f5f5f5;
-}
-
-.summary-label {
-    font-weight: 500;
-    color: #666;
-}
-
-.summary-text {
-    margin-left: 4px;
-    color: #333;
-}
-
-.record-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.record-status {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-}
-
-.status-waiting {
-    background: #f1c40f;
-}
-
-.status-completed {
-    background: #2ecc71;
-}
-
-.status-text {
-    font-size: 13px;
-    color: #999;
-}
-
-.record-action {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 14px;
-    font-weight: 500;
-    color: #4f8cff;
-    transition: all 0.2s;
-}
-
-.record-card:hover .record-action {
     gap: 8px;
 }
 
-@media (max-width: 768px) {
-    .page-header {
-        padding: 12px 16px;
-    }
-    
-    .page-content {
-        padding: 16px;
-    }
-    
-    .records-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 8px;
-    }
-    
-    .header-right {
-        width: 60px;
-    }
+.notification-item {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    background: #fff;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.notification-item:hover {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    transform: translateY(-1px);
+}
+
+.notification-item.unread {
+    background: #fafbff;
+}
+
+.notification-item.unread::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 16px;
+    bottom: 16px;
+    width: 3px;
+    background: #1677ff;
+    border-radius: 0 3px 3px 0;
+}
+
+.item-indicator {
+    position: absolute;
+    top: 18px;
+    left: 8px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #1677ff;
+}
+
+.item-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.item-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.item-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.item-type {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.item-time {
+    font-size: 12px;
+    color: #999;
+}
+
+.item-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin: 0 0 4px;
+    line-height: 1.4;
+}
+
+.item-text {
+    font-size: 14px;
+    color: #666;
+    line-height: 1.5;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.item-detail {
+    font-size: 12px;
+    color: #999;
+    margin: 6px 0 0;
+    padding: 6px 10px;
+    background: #f5f7fa;
+    border-radius: 6px;
+}
+
+.item-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    color: #ccc;
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-top: 10px;
+}
+
+.notification-item:hover .item-action {
+    color: #1677ff;
 }
 </style>

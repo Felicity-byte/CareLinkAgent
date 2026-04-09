@@ -5,7 +5,31 @@ import request from '../../api/request'
 
 const router = useRouter()
 const appointments = ref([])
+const doctorInvitations = ref([])
 const loading = ref(true)
+const dialogVisible = ref(false)
+const formLoading = ref(false)
+const activeTab = ref('patient')
+
+const form = ref({
+    department: '',
+    doctor: '',
+    date: '',
+    time: '',
+    reason: ''
+})
+
+const departments = ['内科', '外科', '心血管内科', '神经内科', '眼科', '儿科', '妇产科', '皮肤科']
+const doctors = {
+    '内科': ['张医生', '王医生'],
+    '外科': ['李医生', '赵医生'],
+    '心血管内科': ['刘医生', '陈医生'],
+    '神经内科': ['孙医生', '周医生'],
+    '眼科': ['吴医生', '郑医生'],
+    '儿科': ['钱医生', '冯医生'],
+    '妇产科': ['杨医生', '朱医生'],
+    '皮肤科': ['秦医生', '许医生']
+}
 
 const fetchAppointments = async () => {
     loading.value = true
@@ -22,16 +46,40 @@ const fetchAppointments = async () => {
                 date: '2024-01-20',
                 time: '09:30',
                 status: 'pending',
-                type: '复诊'
+                source: 'patient',
+                reason: '头痛、发热症状复查'
             },
             {
                 id: '2',
                 department: '外科',
                 doctor: '李医生',
-                date: '2024-01-15',
+                date: '2024-01-22',
                 time: '14:00',
-                status: 'completed',
-                type: '复诊'
+                status: 'pending',
+                source: 'patient',
+                reason: '术后伤口复查'
+            }
+        ]
+        doctorInvitations.value = [
+            {
+                id: '3',
+                department: '心血管内科',
+                doctor: '王医生',
+                date: '2024-01-25',
+                time: '10:30',
+                status: 'pending',
+                source: 'doctor',
+                reason: '高血压随访复查'
+            },
+            {
+                id: '4',
+                department: '眼科',
+                doctor: '赵医生',
+                date: '2024-01-18',
+                time: '15:00',
+                status: 'pending',
+                source: 'doctor',
+                reason: '视力复查，请按时就诊'
             }
         ]
     } finally {
@@ -40,22 +88,61 @@ const fetchAppointments = async () => {
 }
 
 const goBack = () => {
-    router.push({ name: 'patient-home' })
+    router.push({ name: 'ai-chat' })
 }
 
-const createAppointment = () => {
-    router.push({ name: 'patient-home' })
+const openNewAppointmentDialog = () => {
+    form.value = {
+        department: '',
+        doctor: '',
+        date: '',
+        time: '',
+        reason: ''
+    }
+    dialogVisible.value = true
+}
+
+const handleCreate = async () => {
+    if (!form.value.department || !form.value.doctor || !form.value.date || !form.value.time) {
+        alert('请填写完整信息')
+        return
+    }
+    
+    formLoading.value = true
+    try {
+        const newAppointment = {
+            id: Date.now().toString(),
+            department: form.value.department,
+            doctor: form.value.doctor,
+            date: form.value.date,
+            time: form.value.time,
+            status: 'pending',
+            source: 'patient',
+            reason: form.value.reason
+        }
+        appointments.value.unshift(newAppointment)
+        dialogVisible.value = false
+        alert('预约成功')
+    } catch (err) {
+        console.error('创建预约失败', err)
+        alert('创建预约失败，请重试')
+    } finally {
+        formLoading.value = false
+    }
+}
+
+const confirmInvitation = async (id) => {
+    const invitation = doctorInvitations.value.find(inv => inv.id === id)
+    if (invitation) {
+        invitation.status = 'confirmed'
+        appointments.value.unshift({ ...invitation, status: 'pending' })
+    }
 }
 
 const cancelAppointment = async (id) => {
     if (confirm('确定要取消这个预约吗？')) {
-        try {
-            await request.delete(`/appointments/${id}`)
-            appointments.value = appointments.value.filter(a => a.id !== id)
-        } catch (err) {
-            console.error('取消预约失败', err)
-            alert('取消预约失败，请重试')
-        }
+        appointments.value = appointments.value.filter(a => a.id !== id)
+        doctorInvitations.value = doctorInvitations.value.filter(inv => inv.id !== id)
     }
 }
 
@@ -69,7 +156,8 @@ const getStatusText = (status) => {
     const statusMap = {
         'pending': '待就诊',
         'completed': '已完成',
-        'cancelled': '已取消'
+        'cancelled': '已取消',
+        'confirmed': '已确认'
     }
     return statusMap[status] || status
 }
@@ -86,8 +174,11 @@ onMounted(() => {
         <el-icon><ArrowLeft /></el-icon>
         <span>返回</span>
       </button>
-      <h1 class="page-title">复查预约</h1>
-      <div class="header-right"></div>
+      <h1 class="page-title">挂号预约</h1>
+      <button class="new-appointment-btn-header" @click="openNewAppointmentDialog">
+        <el-icon><Plus /></el-icon>
+        <span>新增预约</span>
+      </button>
     </header>
 
     <main class="page-content">
@@ -97,69 +188,145 @@ onMounted(() => {
       </div>
 
       <div v-else class="appointments-container">
-        <div class="section-header">
-          <h2>我的预约</h2>
-          <button class="new-appointment-btn" @click="createAppointment">
-            <el-icon><Plus /></el-icon>
-            <span>新建预约</span>
+        <div class="tabs">
+          <button 
+            class="tab-btn" 
+            :class="{ active: activeTab === 'patient' }"
+            @click="activeTab = 'patient'"
+          >
+            我的预约
+          </button>
+          <button 
+            class="tab-btn" 
+            :class="{ active: activeTab === 'doctor' }"
+            @click="activeTab = 'doctor'"
+          >
+            医生邀请
           </button>
         </div>
 
-        <div v-if="appointments.length === 0" class="empty-state">
-          <el-icon class="text-5xl"><Calendar /></el-icon>
-          <p class="mt-4">暂无预约记录</p>
-          <p class="text-sm text-gray-400 mt-2">完成问诊后可预约复查</p>
+        <div v-if="activeTab === 'patient'" class="tab-content">
+          <div v-if="appointments.length === 0" class="empty-state">
+            <el-icon class="text-5xl"><Calendar /></el-icon>
+            <p class="mt-4">暂无预约记录</p>
+            <p class="empty-hint">点击右上角 + 按钮新建预约</p>
+          </div>
+
+          <div v-else class="appointments-list">
+            <div 
+              v-for="appointment in appointments.filter(a => a.source === 'patient')" 
+              :key="appointment.id" 
+              class="appointment-card"
+              :class="{ 'completed': appointment.status === 'completed' }"
+            >
+              <div class="appointment-header">
+                <div class="appointment-type">
+                  <el-icon class="type-icon"><Calendar /></el-icon>
+                  <span>患者预约</span>
+                </div>
+                <span 
+                  class="appointment-status"
+                  :class="{
+                    'status-pending': appointment.status === 'pending',
+                    'status-completed': appointment.status === 'completed',
+                    'status-cancelled': appointment.status === 'cancelled'
+                  }"
+                >
+                  {{ getStatusText(appointment.status) }}
+                </span>
+              </div>
+
+              <div class="appointment-body">
+                <div class="appointment-info">
+                  <div class="info-item">
+                    <el-icon><OfficeBuilding /></el-icon>
+                    <span>{{ appointment.department }}</span>
+                  </div>
+                  <div class="info-item">
+                    <el-icon><User /></el-icon>
+                    <span>{{ appointment.doctor }}</span>
+                  </div>
+                </div>
+
+                <div class="appointment-time">
+                  <el-icon><Clock /></el-icon>
+                  <span>{{ formatDate(appointment.date) }} {{ appointment.time }}</span>
+                </div>
+                
+                <div v-if="appointment.reason" class="appointment-reason">
+                  <span class="reason-label">预约原因：</span>
+                  <span>{{ appointment.reason }}</span>
+                </div>
+              </div>
+
+              <div v-if="appointment.status === 'pending'" class="appointment-actions">
+                <button class="action-btn cancel-btn" @click="cancelAppointment(appointment.id)">
+                  取消预约
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div v-else class="appointments-list">
-          <div 
-            v-for="appointment in appointments" 
-            :key="appointment.id" 
-            class="appointment-card"
-            :class="{ 'completed': appointment.status === 'completed' }"
-          >
-            <div class="appointment-header">
-              <div class="appointment-type">
-                <el-icon class="type-icon"><Calendar /></el-icon>
-                <span>{{ appointment.type }}</span>
-              </div>
-              <span 
-                class="appointment-status"
-                :class="{
-                  'status-pending': appointment.status === 'pending',
-                  'status-completed': appointment.status === 'completed',
-                  'status-cancelled': appointment.status === 'cancelled'
-                }"
-              >
-                {{ getStatusText(appointment.status) }}
-              </span>
-            </div>
+        <div v-if="activeTab === 'doctor'" class="tab-content">
+          <div v-if="doctorInvitations.length === 0" class="empty-state">
+            <el-icon class="text-5xl"><Bell /></el-icon>
+            <p class="mt-4">暂无医生邀请</p>
+          </div>
 
-            <div class="appointment-body">
-              <div class="appointment-info">
-                <div class="info-item">
-                  <el-icon><OfficeBuilding /></el-icon>
-                  <span>{{ appointment.department }}</span>
+          <div v-else class="appointments-list">
+            <div 
+              v-for="invitation in doctorInvitations" 
+              :key="invitation.id" 
+              class="appointment-card doctor-invitation"
+            >
+              <div class="appointment-header">
+                <div class="appointment-type">
+                  <el-icon class="type-icon"><User /></el-icon>
+                  <span>医生邀请</span>
                 </div>
-                <div class="info-item">
-                  <el-icon><User /></el-icon>
-                  <span>{{ appointment.doctor }}</span>
+                <span 
+                  class="appointment-status"
+                  :class="{
+                    'status-pending': invitation.status === 'pending',
+                    'status-confirmed': invitation.status === 'confirmed'
+                  }"
+                >
+                  {{ getStatusText(invitation.status) }}
+                </span>
+              </div>
+
+              <div class="appointment-body">
+                <div class="appointment-info">
+                  <div class="info-item">
+                    <el-icon><OfficeBuilding /></el-icon>
+                    <span>{{ invitation.department }}</span>
+                  </div>
+                  <div class="info-item">
+                    <el-icon><User /></el-icon>
+                    <span>{{ invitation.doctor }}</span>
+                  </div>
+                </div>
+
+                <div class="appointment-time">
+                  <el-icon><Clock /></el-icon>
+                  <span>{{ formatDate(invitation.date) }} {{ invitation.time }}</span>
+                </div>
+                
+                <div v-if="invitation.reason" class="appointment-reason">
+                  <span class="reason-label">邀请原因：</span>
+                  <span>{{ invitation.reason }}</span>
                 </div>
               </div>
 
-              <div class="appointment-time">
-                <el-icon><Clock /></el-icon>
-                <span>{{ formatDate(appointment.date) }} {{ appointment.time }}</span>
+              <div v-if="invitation.status === 'pending'" class="appointment-actions">
+                <button class="action-btn confirm-btn" @click="confirmInvitation(invitation.id)">
+                  确认预约
+                </button>
+                <button class="action-btn cancel-btn" @click="cancelAppointment(invitation.id)">
+                  婉拒
+                </button>
               </div>
-            </div>
-
-            <div v-if="appointment.status === 'pending'" class="appointment-actions">
-              <button class="action-btn cancel-btn" @click="cancelAppointment(appointment.id)">
-                取消预约
-              </button>
-              <button class="action-btn modify-btn">
-                修改时间
-              </button>
             </div>
           </div>
         </div>
@@ -175,13 +342,69 @@ onMounted(() => {
         </div>
       </div>
     </main>
+
+    <el-dialog
+      v-model="dialogVisible"
+      title="新建预约"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="form" label-width="80px">
+        <el-form-item label="科室">
+          <el-select v-model="form.department" placeholder="请选择科室" style="width: 100%">
+            <el-option v-for="dept in departments" :key="dept" :label="dept" :value="dept" />
+          </el-select>
+        </el-form-item>
+        
+        <el-form-item label="医生">
+          <el-select v-model="form.doctor" placeholder="请选择医生" style="width: 100%" :disabled="!form.department">
+            <el-option v-for="doc in (doctors[form.department] || [])" :key="doc" :label="doc" :value="doc" />
+          </el-select>
+        </el-form-item>
+        
+        <el-form-item label="日期">
+          <el-date-picker
+            v-model="form.date"
+            type="date"
+            placeholder="选择日期"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+        
+        <el-form-item label="时间">
+          <el-select v-model="form.time" placeholder="请选择时间" style="width: 100%">
+            <el-option label="09:00" value="09:00" />
+            <el-option label="09:30" value="09:30" />
+            <el-option label="10:00" value="10:00" />
+            <el-option label="10:30" value="10:30" />
+            <el-option label="11:00" value="11:00" />
+            <el-option label="14:00" value="14:00" />
+            <el-option label="14:30" value="14:30" />
+            <el-option label="15:00" value="15:00" />
+            <el-option label="15:30" value="15:30" />
+            <el-option label="16:00" value="16:00" />
+          </el-select>
+        </el-form-item>
+        
+        <el-form-item label="预约原因">
+          <el-input v-model="form.reason" type="textarea" placeholder="请输入预约原因（选填）" rows="3" />
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleCreate" :loading="formLoading">确认创建</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
 .appointment-page {
     min-height: 100vh;
-    background: #fff;
+    background: linear-gradient(135deg, #e8f4ff 0%, #ffffff 50%, #e8f4ff 100%);
 }
 
 .page-header {
@@ -189,8 +412,10 @@ onMounted(() => {
     align-items: center;
     justify-content: space-between;
     padding: 16px 24px;
-    background: #fff;
-    border-bottom: 1px solid #e5e5e5;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.5);
     position: sticky;
     top: 0;
     z-index: 10;
@@ -227,6 +452,96 @@ onMounted(() => {
 
 .header-right {
     width: 80px;
+}
+
+.new-appointment-btn-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: none;
+    background: linear-gradient(135deg, #4f8cff 0%, #6c5ce7 100%);
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.new-appointment-btn-header:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(79, 140, 255, 0.35);
+}
+
+.new-appointment-btn-header .el-icon {
+    font-size: 16px;
+}
+
+.tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: 4px;
+    border-radius: 10px;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #666;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tab-btn.active {
+    background: #fff;
+    color: #4f8cff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.tab-content {
+    min-height: 300px;
+}
+
+.appointment-reason {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #f5f5f5;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #666;
+}
+
+.reason-label {
+    font-weight: 500;
+    color: #333;
+}
+
+.confirm-btn {
+    background: #4f8cff;
+    color: #fff;
+}
+
+.confirm-btn:hover {
+    background: #3d7ae8;
+}
+
+.status-confirmed {
+    background: #d4edda;
+    color: #155724;
+}
+
+.doctor-invitation {
+    border-left: 4px solid #4f8cff;
 }
 
 .page-content {
@@ -290,6 +605,12 @@ onMounted(() => {
     color: #999;
 }
 
+.empty-hint {
+    font-size: 13px;
+    color: #bbb;
+    margin-top: 8px;
+}
+
 .appointments-list {
     display: flex;
     flex-direction: column;
@@ -299,9 +620,11 @@ onMounted(() => {
 .appointment-card {
     padding: 20px;
     border-radius: 16px;
-    background: #fff;
-    border: 1px solid #e5e5e5;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
     transition: all 0.2s;
 }
 
@@ -439,7 +762,9 @@ onMounted(() => {
 .tips-section {
     margin-top: 32px;
     padding: 20px;
-    background: #f5f5f5;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border-radius: 12px;
 }
 

@@ -3,7 +3,7 @@ import { ref, onMounted, nextTick, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import request from '../../api/request'
-import { PictureFilled, Loading } from '@element-plus/icons-vue'
+import { PictureFilled, Loading, Setting, SwitchButton, Document, Close, Bell } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,7 +15,46 @@ const loading = ref(false)
 const chatContainer = ref(null)
 const textareaRef = ref(null)
 const isDarkMode = ref(false)
+const isMobile = ref(false)
 const sidebarCollapsed = ref(false)
+const chatTitle = ref('AI 智能导诊')
+const showProfileMenu = ref(false)
+const showSettingsDialog = ref(false)
+const showNotificationsDialog = ref(false)
+const selectedNotification = ref(null)
+const settingsActiveTab = ref('general')
+const notifications = ref([
+    {
+        id: 1,
+        type: 'appointment',
+        title: '预约提醒',
+        content: '您预约的内科门诊将于明天上午9:00开始，请准时就诊。',
+        detail: '门诊楼3楼内科诊室 · 携带身份证和医保卡',
+        time: new Date(Date.now() - 1000 * 60 * 30),
+        read: false
+    },
+    {
+        id: 2,
+        type: 'system',
+        title: '健康档案更新',
+        content: '您的健康档案已更新完成，可以在个人中心查看详细信息。',
+        time: new Date(Date.now() - 1000 * 60 * 60 * 24),
+        read: true
+    },
+    {
+        id: 3,
+        type: 'appointment',
+        title: '就诊提醒',
+        content: '您有一个预约将在后天进行，请注意时间安排。',
+        time: new Date(Date.now() - 1000 * 60 * 60 * 48),
+        read: false
+    }
+])
+const userInfo = ref({
+    username: '',
+    phone_number: '',
+    password: ''
+})
 
 // 图片分析相关状态
 const fileInputRef = ref(null)
@@ -32,6 +71,10 @@ const historyList = ref([
     { id: 5, title: '伤口处理建议', time: '8天前', timestamp: Date.now() - 86400000 * 8 },
     { id: 6, title: '旧病历咨询', time: '半个月前', timestamp: Date.now() - 86400000 * 15 },
 ])
+
+const notificationCount = computed(() => {
+    return notifications.value.filter(n => !n.read).length
+})
 
 const todayHistory = computed(() => {
     const today = new Date()
@@ -52,8 +95,6 @@ const olderHistory = computed(() => {
     const weekAgo = today.getTime() - 7 * 86400000
     return historyList.value.filter(item => item.timestamp < weekAgo)
 })
-
-const userInfo = ref(authStore.user || { name: '用户', phone: '' })
 
 const scrollToBottom = async () => {
     await nextTick()
@@ -80,6 +121,11 @@ const handleSend = async () => {
     if (waitingForAnswers.value) {
         await handlePatientAnswer(text)
         return
+    }
+    
+    // 如果是第一条用户消息，更新标题
+    if (messages.value.length === 0 || chatTitle.value === 'AI 智能导诊') {
+        chatTitle.value = text.slice(0, 15) + (text.length > 15 ? '...' : '')
     }
     
     inputText.value = ''
@@ -248,17 +294,49 @@ const startNewChat = () => {
         historyList.value.unshift({
             id: Date.now(),
             title,
-            time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+            time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+            timestamp: Date.now()
         })
     }
     messages.value = []
+    chatTitle.value = 'AI 智能导诊'
     setTimeout(() => {
         addMessage('您好！我是 AI 智能导诊助手。请告诉我您的症状或健康问题，我会为您提供专业的医疗建议和分诊指导。', false)
     }, 300)
 }
 
-const toggleTheme = () => {
-    isDarkMode.value = !isDarkMode.value
+const openSettings = () => {
+    showProfileMenu.value = false
+    showSettingsDialog.value = true
+    settingsActiveTab.value = 'general'
+    userInfo.value = {
+        username: authStore.user?.username || '',
+        phone_number: authStore.user?.phone_number || '',
+        password: ''
+    }
+}
+
+const closeSettings = () => {
+    showSettingsDialog.value = false
+}
+
+const setTheme = (theme) => {
+    isDarkMode.value = theme === 'dark'
+}
+
+const saveUserInfo = async () => {
+    try {
+        const updateData = new URLSearchParams()
+        if (userInfo.value.username) updateData.append('username', userInfo.value.username)
+        if (userInfo.value.password) updateData.append('password', userInfo.value.password)
+        
+        await request.post('/user/update', updateData)
+        authStore.user = { ...authStore.user, username: userInfo.value.username }
+        alert('保存成功')
+    } catch (err) {
+        console.error(err)
+        alert('保存失败')
+    }
 }
 
 const toggleSidebar = () => {
@@ -270,10 +348,71 @@ const deleteHistory = (id) => {
 }
 
 const goToProfile = () => {
-    router.push({ name: 'patient-home' })
+    showProfileMenu.value = !showProfileMenu.value
+}
+
+const goToNotifications = () => {
+    showProfileMenu.value = false
+    showNotificationsDialog.value = true
+}
+
+const closeNotifications = () => {
+    showNotificationsDialog.value = false
+}
+
+const markNotificationAsRead = (notification) => {
+    notification.read = true
+    selectedNotification.value = notification
+}
+
+const closeNotificationDetail = () => {
+    selectedNotification.value = null
+}
+
+const markAllNotificationsAsRead = () => {
+    notifications.value.forEach(n => n.read = true)
+}
+
+const formatNotificationTime = (date) => {
+    const now = new Date()
+    const diff = now - date
+    const minutes = Math.floor(diff / (1000 * 60))
+    const hours = Math.floor(diff / (1000 * 60 * 60))
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    
+    if (minutes < 1) return '刚刚'
+    if (minutes < 60) return `${minutes}分钟前`
+    if (hours < 24) return `${hours}小时前`
+    if (days < 7) return `${days}天前`
+    return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+}
+
+const getNotificationTypeInfo = (type) => {
+    const types = {
+        appointment: { 
+            color: '#1677ff', 
+            bg: 'linear-gradient(135deg, #1677ff 0%, #4096ff 100%)',
+            label: '预约' 
+        },
+        system: { 
+            color: '#722ed1', 
+            bg: 'linear-gradient(135deg, #722ed1 0%, #9254de 100%)',
+            label: '系统' 
+        }
+    }
+    return types[type] || { color: '#666', bg: '#666', label: '通知' }
+}
+
+const closeProfileMenu = () => {
+    showProfileMenu.value = false
+}
+
+const goToAppointment = () => {
+    router.push({ name: 'patient-appointment' })
 }
 
 const logout = () => {
+    showProfileMenu.value = false
     authStore.logout()
     router.push({ name: 'login' })
 }
@@ -282,6 +421,18 @@ onMounted(() => {
     setTimeout(() => {
         addMessage('您好！我是 AI 智能导诊助手。请告诉我您的症状或健康问题，我会为您提供专业的医疗建议和分诊指导。', false)
     }, 300)
+    
+    isMobile.value = window.innerWidth <= 768
+    sidebarCollapsed.value = isMobile.value
+    
+    window.addEventListener('resize', () => {
+        isMobile.value = window.innerWidth <= 768
+        if (isMobile.value) {
+            sidebarCollapsed.value = true
+        } else {
+            sidebarCollapsed.value = false
+        }
+    })
 })
 </script>
 
@@ -290,10 +441,7 @@ onMounted(() => {
     <aside class="sidebar" :class="{ 'collapsed': sidebarCollapsed }">
       <div class="sidebar-top">
         <div class="sidebar-logo">
-          <div class="logo-icon">
-            <el-icon><FirstAidKit /></el-icon>
-          </div>
-          <span v-if="!sidebarCollapsed" class="logo-text">智能导诊</span>
+          <img src="../../img/logo.png" class="logo-img" alt="logo" />
           <button v-if="!sidebarCollapsed" class="sidebar-toggle" @click="toggleSidebar">
             <el-icon><ArrowLeft /></el-icon>
           </button>
@@ -364,21 +512,64 @@ onMounted(() => {
       </div>
       
       <div class="sidebar-bottom">
-        <div class="user-area" v-if="!sidebarCollapsed" @click="goToProfile">
-          <div class="user-avatar">
-            <el-icon><User /></el-icon>
+        <button class="appointment-btn" v-if="!sidebarCollapsed" @click="goToAppointment">
+          <el-icon class="appointment-icon"><Calendar /></el-icon>
+          <span class="appointment-text">挂号预约</span>
+          <el-icon class="appointment-arrow"><ArrowRight /></el-icon>
+        </button>
+        
+        <button v-if="sidebarCollapsed" class="appointment-avatar-mini" @click="goToAppointment" title="挂号预约">
+          <el-icon><Calendar /></el-icon>
+        </button>
+        
+        <div class="user-area-wrapper" v-if="!sidebarCollapsed">
+          <div class="user-area" @click="goToProfile">
+            <div class="user-avatar">
+              <img v-if="authStore.user?.avatar" :src="authStore.user.avatar" alt="头像" class="user-avatar-img" />
+              <el-icon v-else><User /></el-icon>
+            </div>
+            <div class="user-info">
+              <div class="user-name">{{ authStore.user?.username || '未登录' }}</div>
+            </div>
           </div>
-          <div class="user-info">
-            <div class="user-name">个人中心</div>
+          
+          <div v-if="showProfileMenu" class="profile-menu">
+            <div class="profile-menu-item" @click="openSettings">
+              <el-icon><Setting /></el-icon>
+              <span>系统设置</span>
+            </div>
+            <div class="profile-menu-item" @click="goToNotifications">
+              <el-icon><Bell /></el-icon>
+              <span>消息通知</span>
+              <span v-if="notificationCount > 0" class="menu-badge">{{ notificationCount }}</span>
+            </div>
+            <div class="profile-menu-item logout-item" @click="logout">
+              <el-icon><SwitchButton /></el-icon>
+              <span>退出登录</span>
+            </div>
           </div>
-          <el-icon class="user-arrow"><ArrowRight /></el-icon>
         </div>
         
-        <button v-if="sidebarCollapsed" class="user-avatar-mini" @click="goToProfile" title="个人中心">
-          <el-icon><User /></el-icon>
-        </button>
+        <div class="user-mini-wrapper" v-if="sidebarCollapsed">
+          <button class="user-avatar-mini" @click="goToProfile" title="个人中心">
+            <el-icon><User /></el-icon>
+          </button>
+          
+          <div v-if="showProfileMenu" class="profile-menu profile-menu-mini">
+            <div class="profile-menu-item" @click="openSettings">
+              <el-icon><Setting /></el-icon>
+              <span>系统设置</span>
+            </div>
+            <div class="profile-menu-item logout-item" @click="logout">
+              <el-icon><SwitchButton /></el-icon>
+              <span>退出登录</span>
+            </div>
+          </div>
+        </div>
       </div>
     </aside>
+    
+    <div v-if="isMobile && !sidebarCollapsed" class="sidebar-overlay" @click="toggleSidebar"></div>
 
     <div class="main-area">
       <header class="ds-header">
@@ -389,14 +580,10 @@ onMounted(() => {
         </div>
         
         <div class="header-center">
-          <span class="chat-title">AI 智能导诊</span>
+          <span class="chat-title">{{ chatTitle }}</span>
         </div>
         
         <div class="header-right">
-          <button @click="toggleTheme" class="theme-btn">
-            <el-icon v-if="isDarkMode"><Sunny /></el-icon>
-            <el-icon v-else><Moon /></el-icon>
-          </button>
         </div>
       </header>
 
@@ -427,24 +614,35 @@ onMounted(() => {
             class="msg-row"
             :class="{ 'user-row': msg.isUser }"
           >
-            <div class="msg-avatar">
-              <el-icon v-if="!msg.isUser" class="ai-avatar"><Service /></el-icon>
-              <el-icon v-else class="user-avatar"><UserFilled /></el-icon>
-            </div>
-            
-            <div class="msg-body">
-              <div class="msg-bubble" :class="{ 'user-bubble': msg.isUser }">
-                <p>{{ msg.content }}</p>
+            <template v-if="!msg.isUser">
+              <div class="ai-message-wrapper">
+                <div class="ai-header">
+                  <span class="ai-label">AI智能导诊助手</span>
+                </div>
+                <div class="ai-content">
+                  <p>{{ msg.content }}</p>
+                </div>
+                <span class="msg-time">{{ msg.time }}</span>
               </div>
-              <span class="msg-time">{{ msg.time }}</span>
-            </div>
+            </template>
+            <template v-else>
+              <div class="msg-avatar">
+                <el-icon class="user-avatar"><UserFilled /></el-icon>
+              </div>
+              <div class="msg-body">
+                <div class="user-message">
+                  <p>{{ msg.content }}</p>
+                </div>
+                <span class="msg-time">{{ msg.time }}</span>
+              </div>
+            </template>
           </div>
           
           <div v-if="loading" class="msg-row ai-row">
-            <div class="msg-avatar">
-              <el-icon class="ai-avatar"><Service /></el-icon>
-            </div>
-            <div class="msg-body">
+            <div class="ai-message-wrapper">
+              <div class="ai-header">
+                <span class="ai-label">AI智能导诊助手</span>
+              </div>
               <div class="typing-bubble">
                 <span class="dot"></span>
                 <span class="dot"></span>
@@ -465,6 +663,15 @@ onMounted(() => {
             style="display: none"
           />
           
+          <textarea 
+            ref="textareaRef"
+            v-model="inputText"
+            @keydown="handleKeyDown"
+            :placeholder="waitingForAnswers ? '请回答上述问题...' : '输入您的症状或问题...'"
+            rows="2"
+            :disabled="loading"
+          ></textarea>
+          
           <button 
             class="image-btn" 
             @click="triggerFileInput"
@@ -475,14 +682,6 @@ onMounted(() => {
             <el-icon v-else class="loading-icon"><Loading /></el-icon>
           </button>
           
-          <textarea 
-            ref="textareaRef"
-            v-model="inputText"
-            @keydown="handleKeyDown"
-            :placeholder="waitingForAnswers ? '请回答上述问题...' : '输入您的症状或问题...'"
-            rows="2"
-            :disabled="loading"
-          ></textarea>
           <button 
             class="send-btn" 
             @click="handleSend"
@@ -492,6 +691,197 @@ onMounted(() => {
           </button>
         </div>
       </footer>
+    </div>
+
+    <div v-if="showSettingsDialog" class="settings-overlay" @click="closeSettings">
+      <div class="settings-dialog" @click.stop>
+        <div class="settings-sidebar">
+          <h3 class="settings-title">系统设置</h3>
+          <div class="settings-menu">
+            <div 
+              class="settings-menu-item" 
+              :class="{ active: settingsActiveTab === 'general' }"
+              @click="settingsActiveTab = 'general'"
+            >
+              <el-icon><Setting /></el-icon>
+              <span>通用设置</span>
+            </div>
+            <div 
+              class="settings-menu-item" 
+              :class="{ active: settingsActiveTab === 'account' }"
+              @click="settingsActiveTab = 'account'"
+            >
+              <el-icon><User /></el-icon>
+              <span>账号管理</span>
+            </div>
+            <div 
+              class="settings-menu-item" 
+              :class="{ active: settingsActiveTab === 'agreement' }"
+              @click="settingsActiveTab = 'agreement'"
+            >
+              <el-icon><Document /></el-icon>
+              <span>服务协议</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="settings-content">
+          <div class="settings-header">
+            <h2>{{ settingsActiveTab === 'general' ? '通用设置' : settingsActiveTab === 'account' ? '账号管理' : '服务协议' }}</h2>
+            <button class="settings-close" @click="closeSettings">
+              <el-icon><Close /></el-icon>
+            </button>
+          </div>
+          
+          <div class="settings-body">
+            <div v-if="settingsActiveTab === 'general'" class="general-settings">
+              <div class="setting-item">
+                <div class="setting-label">主题模式</div>
+                <div class="theme-options">
+                  <div 
+                    class="theme-option" 
+                    :class="{ active: !isDarkMode }"
+                    @click="setTheme('light')"
+                  >
+                    <div class="theme-preview light-preview"></div>
+                    <span>浅色</span>
+                  </div>
+                  <div 
+                    class="theme-option" 
+                    :class="{ active: isDarkMode }"
+                    @click="setTheme('dark')"
+                  >
+                    <div class="theme-preview dark-preview"></div>
+                    <span>深色</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div v-if="settingsActiveTab === 'account'" class="account-settings">
+              <div class="form-item">
+                <label>用户名</label>
+                <input v-model="userInfo.username" type="text" placeholder="请输入用户名" />
+              </div>
+              <div class="form-item">
+                <label>手机号</label>
+                <input v-model="userInfo.phone_number" type="text" placeholder="请输入手机号" disabled />
+              </div>
+              <div class="form-item">
+                <label>新密码</label>
+                <input v-model="userInfo.password" type="password" placeholder="请输入新密码（不修改请留空）" />
+              </div>
+              <button class="save-btn" @click="saveUserInfo">保存修改</button>
+            </div>
+            
+            <div v-if="settingsActiveTab === 'agreement'" class="agreement-settings">
+              <div class="agreement-content">
+                <h4>用户服务协议</h4>
+                <p>欢迎使用CareLink智能医疗服务平台。在使用本服务前，请仔细阅读以下协议：</p>
+                <h5>一、服务内容</h5>
+                <p>本平台提供AI智能导诊、在线预约、健康咨询等服务。所有医疗建议仅供参考，不能替代专业医生的诊断和治疗。</p>
+                <h5>二、用户责任</h5>
+                <p>1. 用户应提供真实、准确的个人信息。</p>
+                <p>2. 用户不得利用本平台从事违法违规活动。</p>
+                <p>3. 用户应妥善保管账号密码，对账号安全负责。</p>
+                <h5>三、隐私保护</h5>
+                <p>我们重视用户隐私保护，将按照相关法律法规保护用户个人信息。未经用户同意，不会向第三方披露用户信息。</p>
+                <h5>四、免责声明</h5>
+                <p>本平台提供的医疗建议仅供参考，不构成医疗诊断。如有健康问题，请及时就医。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showNotificationsDialog" class="notifications-overlay" @click="closeNotifications">
+      <div class="notifications-dialog" @click.stop>
+        <div class="notifications-header">
+          <h2>消息通知</h2>
+          <div class="header-actions">
+            <span v-if="notificationCount > 0" class="unread-badge">{{ notificationCount }}条未读</span>
+            <button v-if="notificationCount > 0" class="mark-all-btn" @click="markAllNotificationsAsRead">
+              全部已读
+            </button>
+            <button class="close-btn" @click="closeNotifications">
+              <el-icon><Close /></el-icon>
+            </button>
+          </div>
+        </div>
+        
+        <div class="notifications-body">
+          <div v-if="notifications.length === 0" class="empty-state">
+            <div class="empty-icon">
+              <el-icon><Bell /></el-icon>
+            </div>
+            <p>暂无消息</p>
+          </div>
+          
+          <div v-else class="notification-list">
+            <div 
+              v-for="notification in notifications" 
+              :key="notification.id" 
+              class="notification-item"
+              :class="{ unread: !notification.read }"
+              @click="markNotificationAsRead(notification)"
+            >
+              <div class="item-icon" :style="{ background: getNotificationTypeInfo(notification.type).bg }">
+                <el-icon v-if="notification.type === 'appointment'"><Calendar /></el-icon>
+                <el-icon v-else-if="notification.type === 'system'"><Bell /></el-icon>
+                <el-icon v-else><Document /></el-icon>
+              </div>
+              
+              <div class="item-content">
+                <div class="item-header">
+                  <span class="item-type" :style="{ color: getNotificationTypeInfo(notification.type).color }">
+                    {{ getNotificationTypeInfo(notification.type).label }}
+                  </span>
+                  <span class="item-time">{{ formatNotificationTime(notification.time) }}</span>
+                </div>
+                <h4 class="item-title">{{ notification.title }}</h4>
+                <p class="item-text">{{ notification.content }}</p>
+              </div>
+              
+              <div v-if="!notification.read" class="unread-dot"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="selectedNotification" class="notification-detail-overlay" @click="closeNotificationDetail">
+      <div class="notification-detail-dialog" @click.stop>
+        <div class="detail-header">
+          <div class="detail-icon" :style="{ background: getNotificationTypeInfo(selectedNotification.type).bg }">
+            <el-icon v-if="selectedNotification.type === 'appointment'"><Calendar /></el-icon>
+            <el-icon v-else-if="selectedNotification.type === 'system'"><Bell /></el-icon>
+            <el-icon v-else><Document /></el-icon>
+          </div>
+          <div class="detail-meta">
+            <span class="detail-type" :style="{ color: getNotificationTypeInfo(selectedNotification.type).color }">
+              {{ getNotificationTypeInfo(selectedNotification.type).label }}
+            </span>
+            <span class="detail-time">{{ formatNotificationTime(selectedNotification.time) }}</span>
+          </div>
+          <button class="detail-close" @click="closeNotificationDetail">
+            <el-icon><Close /></el-icon>
+          </button>
+        </div>
+        
+        <div class="detail-body">
+          <h3 class="detail-title">{{ selectedNotification.title }}</h3>
+          <p class="detail-content">{{ selectedNotification.content }}</p>
+          <div v-if="selectedNotification.detail" class="detail-extra">
+            <el-icon><InfoFilled /></el-icon>
+            <span>{{ selectedNotification.detail }}</span>
+          </div>
+        </div>
+        
+        <div class="detail-footer">
+          <button class="detail-btn primary" @click="closeNotificationDetail">我知道了</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -504,11 +894,11 @@ onMounted(() => {
     transition: background 0.3s ease;
 }
 
-.dark-mode { background: #1a1a1a; }
-.light-mode { background: linear-gradient(180deg, #ffffff 0%, #d4e8ff 100%); }
+.dark-mode { background: linear-gradient(180deg, #1a1a1a 0%, #2d2d2d 50%, #1a1a1a 100%); }
+.light-mode { background: linear-gradient(135deg, #e8f4ff 0%, #ffffff 50%, #e8f4ff 100%); }
 
 .sidebar {
-    width: 260px;
+    width: 280px;
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -516,10 +906,14 @@ onMounted(() => {
     flex-shrink: 0;
 }
 
-.sidebar.collapsed { width: 64px; }
+.sidebar.collapsed { width: 68px; }
 
-.dark-mode .sidebar { background: rgba(32, 33, 35, 0.25); border-right: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
-.light-mode .sidebar { background: rgba(255, 255, 255, 0.15); border-right: 1px solid rgba(255, 255, 255, 0.3); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: inset 1px 1px 10px rgba(255, 255, 255, 0.2), 0 4px 30px rgba(0, 0, 0, 0.08); }
+.sidebar-overlay {
+    display: none;
+}
+
+.dark-mode .sidebar { background: rgba(30, 30, 30, 0.85); border-right: 1px solid rgba(255, 255, 255, 0.08); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); }
+.light-mode .sidebar { background: rgba(255, 255, 255, 0.92); border-right: 1px solid rgba(255, 255, 255, 0.5); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); box-shadow: 4px 0 20px rgba(0, 0, 0, 0.06); }
 
 .sidebar-top {
     padding: 16px;
@@ -534,6 +928,7 @@ onMounted(() => {
     gap: 12px;
     padding: 4px 0;
     width: 100%;
+    justify-content: space-between;
 }
 
 .sidebar.collapsed .sidebar-logo {
@@ -541,54 +936,92 @@ onMounted(() => {
 }
 
 .logo-icon {
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
     border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 20px;
+    font-size: 22px;
     background: linear-gradient(135deg, #4f8cff, #6c5ce7);
     color: #fff;
     flex-shrink: 0;
 }
 
+.logo-img {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
 .logo-text {
     flex: 1;
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 600;
 }
 
 .dark-mode .logo-text { color: #ececec; }
 .light-mode .logo-text { color: #1a1a1a; }
 
+.sidebar-toggle {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: all 0.2s;
+}
+
+.dark-mode .sidebar-toggle {
+    background: #fff;
+    color: #333;
+}
+.dark-mode .sidebar-toggle:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
+.light-mode .sidebar-toggle {
+    background: #fff;
+    color: #666;
+}
+.light-mode .sidebar-toggle:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
 .expand-btn {
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
     border-radius: 10px;
     border: none;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 18px;
-    transition: all 0.2s;
+    font-size: 20px;
+    transition: all 0.3s ease;
+    background: transparent;
 }
 
 .dark-mode .expand-btn {
-    background: rgba(255,255,255,0.08);
-    color: #ccc;
+    color: #fff;
 }
 .dark-mode .expand-btn:hover {
-    background: rgba(255,255,255,0.12);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .light-mode .expand-btn {
-    background: #f5f5f5;
     color: #333;
 }
 .light-mode .expand-btn:hover {
-    background: #e0e0e0;
+    background: rgba(0, 0, 0, 0.05);
 }
 
 .new-chat-btn {
@@ -597,32 +1030,61 @@ onMounted(() => {
     justify-content: center;
     gap: 8px;
     padding: 12px 16px;
-    border-radius: 12px;
+    border-radius: 25px;
     border: none;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.3s ease;
+    background: #fff;
+    color: #333;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 
 .sidebar.collapsed .new-chat-btn {
     padding: 12px;
+    background: transparent;
+    box-shadow: none;
+}
+
+.dark-mode .sidebar.collapsed .new-chat-btn {
+    color: #fff;
+}
+
+.light-mode .sidebar.collapsed .new-chat-btn {
+    color: #333;
+}
+
+.dark-mode .sidebar.collapsed .new-chat-btn:hover {
+    background: transparent;
+    transform: none;
+    box-shadow: none;
+}
+
+.light-mode .sidebar.collapsed .new-chat-btn:hover {
+    background: transparent;
+    transform: none;
+    box-shadow: none;
 }
 
 .dark-mode .new-chat-btn {
-    background: rgba(255,255,255,0.08);
-    color: #ececec;
+    background: rgba(255,255,255,0.95);
+    color: #333;
 }
 .dark-mode .new-chat-btn:hover {
-    background: rgba(255,255,255,0.15);
+    background: #fff;
+    transform: translateY(-5px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 .light-mode .new-chat-btn {
-    background: #f0f0f0;
+    background: #fff;
     color: #333;
 }
 .light-mode .new-chat-btn:hover {
-    background: #e0e0e0;
+    background: #fff;
+    transform: translateY(-5px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 .sidebar-history {
@@ -669,13 +1131,13 @@ onMounted(() => {
     align-items: center;
     gap: 10px;
     padding: 10px 12px;
-    border-radius: 10px;
+    border-radius: 25px;
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .dark-mode .history-item:hover { background: rgba(255,255,255,0.05); }
-.light-mode .history-item:hover { background: #f5f5f5; }
+.light-mode .history-item:hover { background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
 
 .history-icon {
     font-size: 18px;
@@ -745,11 +1207,126 @@ onMounted(() => {
     padding: 12px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 15px;
+    align-items: center;
 }
 
 .dark-mode .sidebar-bottom { background: rgba(32, 33, 35, 0.15); }
 .light-mode .sidebar-bottom { background: rgba(255, 255, 255, 0.08); }
+
+.appointment-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    background: transparent;
+    width: 100%;
+    font-size: inherit;
+}
+
+.dark-mode .appointment-btn:hover { background: rgba(255,255,255,0.05); }
+.light-mode .appointment-btn:hover { background: #f5f5f5; }
+
+.appointment-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    background: linear-gradient(135deg, #4f8cff, #6c5ce7);
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.appointment-text {
+    flex: 1;
+    font-size: 15px;
+    font-weight: 500;
+    text-align: left;
+}
+
+.dark-mode .appointment-text { color: #ececec; }
+.light-mode .appointment-text { color: #333; }
+
+.user-area-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.user-mini-wrapper {
+    position: relative;
+    display: flex;
+    justify-content: center;
+}
+
+.profile-menu {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 8px;
+    min-width: 140px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    padding: 8px 0;
+    z-index: 100;
+}
+
+.profile-menu-mini {
+    left: calc(100% + 18px);
+    bottom: -40px;
+    transform: none;
+    margin-bottom: 0;
+    min-width: 160px;
+}
+
+.profile-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 14px;
+    color: #333;
+}
+
+.profile-menu-item:hover {
+    background: #f5f5f5;
+}
+
+.profile-menu-item .el-icon {
+    font-size: 18px;
+}
+
+.logout-item {
+    color: #ff4757;
+}
+
+.logout-item:hover {
+    background: #fff5f5;
+}
+
+.menu-badge {
+    margin-left: auto;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    background: #ff4757;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+}
 
 .user-area {
     display: flex;
@@ -775,6 +1352,13 @@ onMounted(() => {
     background: linear-gradient(135deg, #00b894, #00cec9);
     color: #fff;
     flex-shrink: 0;
+    overflow: hidden;
+}
+
+.user-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .user-avatar-mini {
@@ -787,6 +1371,21 @@ onMounted(() => {
     justify-content: center;
     font-size: 18px;
     background: linear-gradient(135deg, #00b894, #00cec9);
+    color: #fff;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.appointment-avatar-mini {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    background: linear-gradient(135deg, #4f8cff, #6c5ce7);
     color: #fff;
     cursor: pointer;
     flex-shrink: 0;
@@ -814,6 +1413,18 @@ onMounted(() => {
 .light-mode .user-arrow { color: #aaa; }
 
 .user-area:hover .user-arrow {
+    transform: translateX(2px);
+}
+
+.appointment-arrow {
+    font-size: 18px;
+    transition: transform 0.2s;
+}
+
+.dark-mode .appointment-arrow { color: #666; }
+.light-mode .appointment-arrow { color: #aaa; }
+
+.appointment-btn:hover .appointment-arrow {
     transform: translateX(2px);
 }
 
@@ -1023,10 +1634,54 @@ onMounted(() => {
     color: #fff;
 }
 
+.ai-message-wrapper {
+    flex: 1;
+    max-width: 70%;
+}
+
+.ai-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.ai-label {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.dark-mode .ai-label { color: #ececec; }
+.light-mode .ai-label { color: #333; }
+
+.ai-content {
+    line-height: 1.8;
+}
+
+.ai-content p {
+    margin: 0;
+    font-size: 18px;
+}
+
+.dark-mode .ai-content { color: #ececec; }
+.light-mode .ai-content { color: #333; }
+
 .msg-body {
     flex: 1;
     max-width: 70%;
 }
+
+.user-message {
+    line-height: 1.8;
+}
+
+.user-message p {
+    margin: 0;
+    font-size: 18px;
+}
+
+.dark-mode .user-message { color: #ececec; }
+.light-mode .user-message { color: #333; }
 
 .msg-bubble {
     padding: 14px 18px;
@@ -1070,13 +1725,12 @@ onMounted(() => {
 .typing-bubble {
     display: flex;
     gap: 4px;
-    padding: 14px 18px;
-    border-radius: 16px;
+    padding: 8px 0;
     width: fit-content;
 }
 
-.dark-mode .typing-bubble { background: #2f2f2f; }
-.light-mode .typing-bubble { background: #f0f0f0; }
+.dark-mode .typing-bubble { background: transparent; }
+.light-mode .typing-bubble { background: transparent; }
 
 .typing-bubble .dot {
     width: 8px;
@@ -1108,22 +1762,24 @@ onMounted(() => {
     max-width: 800px;
     margin: 0 auto;
     padding: 12px 16px;
-    border-radius: 16px;
+    border-radius: 25px;
     transition: all 0.2s;
+    background: #fff;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
 }
 
 .dark-mode .input-box {
-    background: #2f2f2f;
+    background: #2d2d2d;
 }
 .dark-mode .input-box:focus-within {
-    background: #3a3a3a;
+    background: #2d2d2d;
 }
 
 .light-mode .input-box {
-    background: #f0f0f0;
+    background: #fff;
 }
 .light-mode .input-box:focus-within {
-    background: #e8e8e8;
+    background: #fff;
 }
 
 .input-box textarea {
@@ -1134,17 +1790,16 @@ onMounted(() => {
     resize: none;
     font-size: 15px;
     line-height: 1.5;
-    min-height: 48px;
-    max-height: 150px;
+    min-height: 98px;
+    max-height: 200px;
     font-family: inherit;
 }
 
 .dark-mode .input-box textarea { color: #ececec; }
 .light-mode .input-box textarea { color: #1a1a1a; }
 
-.input-box textarea::placeholder {
-    color: #888;
-}
+.dark-mode .input-box textarea::placeholder { color: #666; }
+.light-mode .input-box textarea::placeholder { color: #888; }
 
 .send-btn {
     width: 40px;
@@ -1244,6 +1899,17 @@ onMounted(() => {
         transform: translateX(-100%);
     }
     
+    .sidebar-overlay {
+        display: block;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 99;
+    }
+    
     .mobile-toggle {
         display: flex;
     }
@@ -1251,5 +1917,642 @@ onMounted(() => {
     .msg-body {
         max-width: 85%;
     }
+}
+
+.settings-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.settings-dialog {
+    width: 800px;
+    max-width: 90vw;
+    height: 500px;
+    max-height: 80vh;
+    background: #fff;
+    border-radius: 16px;
+    display: flex;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.settings-sidebar {
+    width: 200px;
+    background: #f7f8fa;
+    border-right: 1px solid #e5e6eb;
+    padding: 20px 0;
+    flex-shrink: 0;
+}
+
+.settings-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1a1a;
+    padding: 0 20px 20px;
+    margin: 0;
+    border-bottom: 1px solid #e5e6eb;
+}
+
+.settings-menu {
+    padding: 10px 0;
+}
+
+.settings-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #666;
+    font-size: 14px;
+}
+
+.settings-menu-item:hover {
+    background: #eef0f3;
+    color: #333;
+}
+
+.settings-menu-item.active {
+    background: #e6f4ff;
+    color: #1677ff;
+}
+
+.settings-menu-item .el-icon {
+    font-size: 18px;
+}
+
+.settings-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid #e5e6eb;
+}
+
+.settings-header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.settings-close {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: #999;
+    transition: all 0.2s;
+}
+
+.settings-close:hover {
+    background: #f5f5f5;
+    color: #333;
+}
+
+.settings-body {
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+}
+
+.setting-item {
+    margin-bottom: 24px;
+}
+
+.setting-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #333;
+    margin-bottom: 12px;
+}
+
+.theme-options {
+    display: flex;
+    gap: 16px;
+}
+
+.theme-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    border-radius: 12px;
+    border: 2px solid #e5e6eb;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.theme-option:hover {
+    border-color: #1677ff;
+}
+
+.theme-option.active {
+    border-color: #1677ff;
+    background: #e6f4ff;
+}
+
+.theme-preview {
+    width: 80px;
+    height: 50px;
+    border-radius: 8px;
+}
+
+.light-preview {
+    background: linear-gradient(135deg, #e8f4ff 0%, #ffffff 50%, #e8f4ff 100%);
+    border: 1px solid #e5e6eb;
+}
+
+.dark-preview {
+    background: linear-gradient(180deg, #1a1a1a 0%, #2d2d2d 50%, #1a1a1a 100%);
+}
+
+.theme-option span {
+    font-size: 13px;
+    color: #666;
+}
+
+.theme-option.active span {
+    color: #1677ff;
+}
+
+.form-item {
+    margin-bottom: 20px;
+}
+
+.form-item label {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.form-item input {
+    width: 100%;
+    max-width: 400px;
+    padding: 12px 16px;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: all 0.2s;
+    outline: none;
+}
+
+.form-item input:focus {
+    border-color: #1677ff;
+    box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
+}
+
+.form-item input:disabled {
+    background: #f5f5f5;
+    color: #999;
+    cursor: not-allowed;
+}
+
+.save-btn {
+    padding: 12px 32px;
+    background: #1677ff;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.save-btn:hover {
+    background: #0958d9;
+}
+
+.agreement-content {
+    max-width: 600px;
+    line-height: 1.8;
+    color: #333;
+}
+
+.agreement-content h4 {
+    font-size: 18px;
+    margin: 0 0 16px;
+}
+
+.agreement-content h5 {
+    font-size: 15px;
+    margin: 20px 0 10px;
+    color: #1a1a1a;
+}
+
+.agreement-content p {
+    font-size: 14px;
+    color: #666;
+    margin: 8px 0;
+}
+
+.notifications-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.notifications-dialog {
+    width: 560px;
+    max-width: 90vw;
+    max-height: 80vh;
+    background: #fff;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+}
+
+.notifications-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.notifications-header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.unread-badge {
+    font-size: 12px;
+    color: #1677ff;
+    font-weight: 500;
+}
+
+.mark-all-btn {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 14px;
+    background: #1677ff;
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.mark-all-btn:hover {
+    background: #0958d9;
+}
+
+.close-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: #f5f5f5;
+    color: #666;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.close-btn:hover {
+    background: #e8e8e8;
+    color: #333;
+}
+
+.notifications-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+}
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+}
+
+.empty-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f0f5ff 0%, #e6f4ff 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+
+.empty-icon .el-icon {
+    font-size: 36px;
+    color: #1677ff;
+    opacity: 0.6;
+}
+
+.empty-state p {
+    font-size: 14px;
+    color: #999;
+    margin: 0;
+}
+
+.notification-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.notification-item {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+    background: #fff;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #f0f0f0;
+}
+
+.notification-item:hover {
+    background: #fafafa;
+    border-color: #e6e6e6;
+}
+
+.notification-item.unread {
+    background: #f6faff;
+    border-color: #d6e4ff;
+}
+
+.notification-item.unread::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 14px;
+    bottom: 14px;
+    width: 3px;
+    background: #1677ff;
+    border-radius: 0 3px 3px 0;
+}
+
+.item-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.item-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.item-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.item-type {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.item-time {
+    font-size: 11px;
+    color: #999;
+}
+
+.item-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin: 0 0 4px;
+    line-height: 1.4;
+}
+
+.item-text {
+    font-size: 13px;
+    color: #666;
+    line-height: 1.5;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.item-detail {
+    font-size: 11px;
+    color: #999;
+    margin: 6px 0 0;
+    padding: 4px 8px;
+    background: #f5f7fa;
+    border-radius: 4px;
+}
+
+.unread-dot {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #1677ff;
+}
+
+.notification-detail-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+}
+
+.notification-detail-dialog {
+    width: 480px;
+    max-width: 90vw;
+    background: #fff;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 25px 80px rgba(0, 0, 0, 0.35);
+}
+
+.detail-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 24px;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.detail-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.detail-meta {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.detail-type {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.detail-time {
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.detail-close {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 10px;
+    background: #fff;
+    color: #64748b;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.detail-close:hover {
+    background: #f1f5f9;
+    color: #334155;
+}
+
+.detail-body {
+    padding: 28px 24px;
+}
+
+.detail-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0 0 16px;
+    line-height: 1.4;
+}
+
+.detail-content {
+    font-size: 15px;
+    color: #475569;
+    line-height: 1.8;
+    margin: 0;
+}
+
+.detail-extra {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 20px;
+    padding: 16px;
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    border-radius: 12px;
+    border: 1px solid #bae6fd;
+}
+
+.detail-extra .el-icon {
+    font-size: 18px;
+    color: #0284c7;
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.detail-extra span {
+    font-size: 14px;
+    color: #0369a1;
+    line-height: 1.6;
+}
+
+.detail-footer {
+    padding: 20px 24px;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: center;
+}
+
+.detail-btn {
+    padding: 12px 48px;
+    border: none;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.detail-btn.primary {
+    background: linear-gradient(135deg, #1677ff 0%, #0958d9 100%);
+    color: #fff;
+}
+
+.detail-btn.primary:hover {
+    background: linear-gradient(135deg, #0958d9 0%, #003eb3 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(22, 119, 255, 0.35);
 }
 </style>
