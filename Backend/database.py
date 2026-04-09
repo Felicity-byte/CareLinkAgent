@@ -2,16 +2,18 @@
 from tortoise import Tortoise
 from config import settings
 
+db_config = settings.get_db_config()
+
 TORTOISE_ORM = {
     "connections": {
         "default": {
             "engine": "tortoise.backends.mysql",
             "credentials": {
-                "host": settings.DB_HOST,
-                "port": settings.DB_PORT,
-                "user": settings.DB_USER,
-                "password": settings.DB_PASSWORD,
-                "database": settings.DB_NAME,
+                "host": db_config["host"],
+                "port": db_config["port"],
+                "user": db_config["user"],
+                "password": db_config["password"],
+                "database": db_config["database"],
                 "minsize": 1,
                 "maxsize": 5,
                 "charset": "utf8mb4",

@@ -1,16 +1,12 @@
 from pydantic_settings import BaseSettings
 from typing import List
+from urllib.parse import urlparse
 
 
 class Settings(BaseSettings):
     """应用配置"""
 
-    # 数据库配置 (MySQL)
-    DB_HOST: str
-    DB_PORT: int
-    DB_USER: str
-    DB_PASSWORD: str
-    DB_NAME: str
+    # 数据库配置 (MySQL) - 使用DATABASE_URL
     DATABASE_URL: str
 
     # 调试模式
@@ -30,8 +26,8 @@ class Settings(BaseSettings):
 
     # AI服务配置
     GLM_API_KEY: str
-    GLM_4V_API_KEY: str = ""  # glm-4v-flash 图片分析 API Key
-    AI_SERVICE_HOST: str = "127.0.0.1:50053"  # gRPC 服务端口（与 server.py 保持一致）
+    GLM_4V_API_KEY: str = ""
+    AI_SERVICE_HOST: str = "127.0.0.1:50053"
 
     class Config:
         env_file = ".env"
@@ -40,6 +36,17 @@ class Settings(BaseSettings):
     def get_origins_list(self) -> List[str]:
         """获取CORS允许的源列表"""
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
+
+    def get_db_config(self) -> dict:
+        """从DATABASE_URL解析数据库配置"""
+        parsed = urlparse(self.DATABASE_URL)
+        return {
+            "host": parsed.hostname or "localhost",
+            "port": parsed.port or 3306,
+            "user": parsed.username or "root",
+            "password": parsed.password or "",
+            "database": parsed.path.lstrip("/") or "",
+        }
 
 
 settings = Settings()
