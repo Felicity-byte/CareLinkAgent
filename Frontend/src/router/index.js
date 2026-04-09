@@ -33,9 +33,21 @@ const router = createRouter({
             redirect: '/doctor/workspace'
         },
         {
-            path: '/doctor/patient/:id',
+            path: '/doctor/patients',
+            name: 'patient-management',
+            component: () => import('../views/doctor/PatientManagement.vue'),
+            meta: { requiresAuth: true, role: 'doctor' }
+        },
+        {
+            path: '/doctor/patient/:id/detail',
             name: 'patient-detail',
-            component: () => import('../views/PatientDetail.vue'),
+            component: () => import('../views/doctor/PatientDetail.vue'),
+            meta: { requiresAuth: true, role: 'doctor' }
+        },
+        {
+            path: '/doctor/appointments',
+            name: 'appointment-management',
+            component: () => import('../views/doctor/AppointmentManagement.vue'),
             meta: { requiresAuth: true, role: 'doctor' }
         },
         {

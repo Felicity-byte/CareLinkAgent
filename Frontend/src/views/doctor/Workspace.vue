@@ -1,7 +1,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 
+const router = useRouter()
 const authStore = useAuthStore()
 
 const sidebarCollapsed = ref(true)
@@ -13,11 +15,10 @@ const welcomeText = ref('欢迎回来，' + (authStore.doctor?.username || '医�
 const notificationCount = ref(3)
 
 const menuItems = ref([
-    { label: '工作台', icon: 'HomeFilled', active: true },
-    { label: '患者管理', icon: 'User' },
-    { label: '病历记录', icon: 'Document' },
-    { label: '挂号预约', icon: 'Calendar' },
-    { label: '个人中心', icon: 'Setting' }
+    { label: '工作台', icon: 'HomeFilled', active: true, route: '/doctor/workspace' },
+    { label: '患者管理', icon: 'User', active: false, route: '/doctor/patients' },
+    { label: '挂号预约', icon: 'Calendar', active: false, route: '/doctor/appointments' },
+    { label: '个人中心', icon: 'Setting', active: false, route: '/doctor/profile' }
 ])
 
 const handleMenuClick = (index) => {
@@ -27,6 +28,10 @@ const handleMenuClick = (index) => {
     showMobileMenu.value = false
     if (isMobile.value) {
         sidebarCollapsed.value = true
+    }
+    const route = menuItems.value[index].route
+    if (route) {
+        router.push(route)
     }
 }
 
