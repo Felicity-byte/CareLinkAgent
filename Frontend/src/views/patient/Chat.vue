@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import request from '../../api/request'
@@ -25,10 +25,33 @@ const waitingForAnswers = ref(false)
 const currentSessionId = ref(`sess_${Date.now()}`)
 
 const historyList = ref([
-    { id: 1, title: '头痛症状咨询', time: '今天 14:30' },
-    { id: 2, title: '发烧处理建议', time: '昨天 09:15' },
-    { id: 3, title: '胃痛科室推荐', time: '3天前' },
+    { id: 1, title: '头痛症状咨询', time: '今天 14:30', timestamp: Date.now() },
+    { id: 2, title: '发烧处理建议', time: '昨天 09:15', timestamp: Date.now() - 86400000 },
+    { id: 3, title: '胃痛科室推荐', time: '3天前', timestamp: Date.now() - 86400000 * 3 },
+    { id: 4, title: '术后护理咨询', time: '5天前', timestamp: Date.now() - 86400000 * 5 },
+    { id: 5, title: '伤口处理建议', time: '8天前', timestamp: Date.now() - 86400000 * 8 },
+    { id: 6, title: '旧病历咨询', time: '半个月前', timestamp: Date.now() - 86400000 * 15 },
 ])
+
+const todayHistory = computed(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return historyList.value.filter(item => item.timestamp >= today.getTime())
+})
+
+const weekHistory = computed(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const weekAgo = today.getTime() - 7 * 86400000
+    return historyList.value.filter(item => item.timestamp >= weekAgo && item.timestamp < today.getTime())
+})
+
+const olderHistory = computed(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const weekAgo = today.getTime() - 7 * 86400000
+    return historyList.value.filter(item => item.timestamp < weekAgo)
+})
 
 const userInfo = ref(authStore.user || { name: '用户', phone: '' })
 
@@ -287,14 +310,13 @@ onMounted(() => {
       </div>
       
       <div class="sidebar-history" v-if="!sidebarCollapsed">
-        <div class="history-title">历史对话</div>
-        <div class="history-list">
-          <div 
-            v-for="item in historyList" 
-            :key="item.id" 
+        <div class="history-list" v-if="todayHistory.length > 0">
+          <div class="history-group-title">今天</div>
+          <div
+            v-for="item in todayHistory"
+            :key="item.id"
             class="history-item"
           >
-            <el-icon class="history-icon"><ChatDotRound /></el-icon>
             <div class="history-info">
               <div class="history-name">{{ item.title }}</div>
               <div class="history-time">{{ item.time }}</div>
@@ -303,6 +325,41 @@ onMounted(() => {
               <el-icon><Delete /></el-icon>
             </button>
           </div>
+        </div>
+        <div class="history-list" v-if="weekHistory.length > 0">
+          <div class="history-group-title">七天内</div>
+          <div
+            v-for="item in weekHistory"
+            :key="item.id"
+            class="history-item"
+          >
+            <div class="history-info">
+              <div class="history-name">{{ item.title }}</div>
+              <div class="history-time">{{ item.time }}</div>
+            </div>
+            <button class="delete-btn" @click.stop="deleteHistory(item.id)">
+              <el-icon><Delete /></el-icon>
+            </button>
+          </div>
+        </div>
+        <div class="history-list" v-if="olderHistory.length > 0">
+          <div class="history-group-title">更早</div>
+          <div
+            v-for="item in olderHistory"
+            :key="item.id"
+            class="history-item"
+          >
+            <div class="history-info">
+              <div class="history-name">{{ item.title }}</div>
+              <div class="history-time">{{ item.time }}</div>
+            </div>
+            <button class="delete-btn" @click.stop="deleteHistory(item.id)">
+              <el-icon><Delete /></el-icon>
+            </button>
+          </div>
+        </div>
+        <div class="history-empty" v-if="historyList.length === 0">
+          暂无历史对话
         </div>
       </div>
       
@@ -448,7 +505,7 @@ onMounted(() => {
 }
 
 .dark-mode { background: #1a1a1a; }
-.light-mode { background: #fff; }
+.light-mode { background: linear-gradient(180deg, #ffffff 0%, #d4e8ff 100%); }
 
 .sidebar {
     width: 260px;
@@ -461,8 +518,8 @@ onMounted(() => {
 
 .sidebar.collapsed { width: 64px; }
 
-.dark-mode .sidebar { background: #202123; border-right: 1px solid #2d2d30; }
-.light-mode .sidebar { background: #fff; border-right: 1px solid #e5e5e5; }
+.dark-mode .sidebar { background: rgba(32, 33, 35, 0.25); border-right: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.light-mode .sidebar { background: rgba(255, 255, 255, 0.15); border-right: 1px solid rgba(255, 255, 255, 0.3); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: inset 1px 1px 10px rgba(255, 255, 255, 0.2), 0 4px 30px rgba(0, 0, 0, 0.08); }
 
 .sidebar-top {
     padding: 16px;
@@ -574,14 +631,28 @@ onMounted(() => {
     padding: 0 12px;
 }
 
-.dark-mode .sidebar-history { background: #202123; }
-.light-mode .sidebar-history { background: #fff; }
+.dark-mode .sidebar-history { background: rgba(32, 33, 35, 0.15); }
+.light-mode .sidebar-history { background: rgba(255, 255, 255, 0.08); }
 
 .history-title {
     font-size: 12px;
     font-weight: 500;
     padding: 8px 4px;
     margin-bottom: 4px;
+}
+
+.history-group-title {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 4px 4px;
+    color: #999;
+}
+
+.history-empty {
+    font-size: 13px;
+    color: #aaa;
+    text-align: center;
+    padding: 20px 0;
 }
 
 .dark-mode .history-title { color: #666; }
@@ -616,7 +687,7 @@ onMounted(() => {
 .history-info { flex: 1; min-width: 0; }
 
 .history-name {
-    font-size: 14px;
+    font-size: 15px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -626,7 +697,7 @@ onMounted(() => {
 .light-mode .history-name { color: #333; }
 
 .history-time {
-    font-size: 11px;
+    font-size: 12px;
     margin-top: 2px;
 }
 
@@ -677,8 +748,8 @@ onMounted(() => {
     gap: 8px;
 }
 
-.dark-mode .sidebar-bottom { background: #202123; }
-.light-mode .sidebar-bottom { background: #fff; }
+.dark-mode .sidebar-bottom { background: rgba(32, 33, 35, 0.15); }
+.light-mode .sidebar-bottom { background: rgba(255, 255, 255, 0.08); }
 
 .user-area {
     display: flex;
@@ -762,8 +833,8 @@ onMounted(() => {
     transition: all 0.3s ease;
 }
 
-.dark-mode .ds-header { background: #1a1a1a; border-color: #2d2d30; }
-.light-mode .ds-header { background: #f7f7f8; border-color: #e5e5e5; }
+.dark-mode .ds-header { background: rgba(26, 26, 26, 0.9); border-color: rgba(45, 45, 48, 0.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.light-mode .ds-header { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: 0 4px 30px rgba(0, 0, 0, 0.08); }
 
 .header-left,
 .header-right { display: flex; align-items: center; gap: 8px; }
