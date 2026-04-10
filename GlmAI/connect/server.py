@@ -43,7 +43,8 @@ class PostSurgeryFollowUpServicer(medical_ai_grpc.PostSurgeryFollowUpServiceServ
             result = ai_service.create_session(
                 patient_id=request.patient_id,
                 patient_name=request.patient_name,
-                surgery_date=request.surgery_date
+                surgery_date=request.surgery_date,
+                surgery_type=request.surgery_type
             )
             
             return medical_ai_pb2.CreateSessionResponse(

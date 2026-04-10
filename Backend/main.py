@@ -11,7 +11,8 @@ from app.routers import (
     doctor_router,
     department_router,
     wound_router,
-    appointment_router
+    appointment_router,
+    ai_chat_router
 )
 from app.utils.response import error_response
 from tortoise import Tortoise
@@ -44,6 +45,10 @@ static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+uploads_dir = Path(__file__).parent / "uploads"
+uploads_dir.mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+
 
 @app.on_event("startup")
 async def startup():
@@ -70,6 +75,7 @@ app.include_router(doctor_router, prefix="/doctor", tags=["医生"])
 app.include_router(department_router, prefix="/department", tags=["科室"])
 app.include_router(wound_router, prefix="/wound", tags=["伤口分析"])
 app.include_router(appointment_router, prefix="/appointments", tags=["预约"])
+app.include_router(ai_chat_router, prefix="/ai", tags=["AI导诊"])
 
 
 @app.exception_handler(HTTPException)

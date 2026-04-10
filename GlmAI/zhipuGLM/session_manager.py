@@ -6,6 +6,7 @@ from enum import Enum
 
 class SessionStatus(Enum):
     WAITING_SURGERY = "WAITING_SURGERY"
+    WAITING_SURGERY_CONFIRM = "WAITING_SURGERY_CONFIRM"
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
@@ -60,6 +61,10 @@ class Session:
     def set_surgery_type(self, surgery_type: str):
         self.surgery_type = surgery_type
         if self.status == SessionStatus.WAITING_SURGERY:
+            self.status = SessionStatus.WAITING_SURGERY_CONFIRM
+
+    def confirm_surgery(self):
+        if self.status == SessionStatus.WAITING_SURGERY_CONFIRM:
             self.status = SessionStatus.ACTIVE
 
     def complete(self):

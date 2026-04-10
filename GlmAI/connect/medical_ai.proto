@@ -15,6 +15,7 @@ message CreateSessionRequest {
   string patient_id = 1;        // 患者ID
   string patient_name = 2;       // 患者姓名
   string surgery_date = 3;      // 手术日期 (YYYY-MM-DD)
+  string surgery_type = 4;      // 手术类型（可选，如已知则传入）
 }
 
 message CreateSessionResponse {

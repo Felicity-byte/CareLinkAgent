@@ -1,8 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile
 from pydantic import ValidationError
 import uuid
+import os
+from datetime import datetime
 from app.database_tortoise import get_db
 from app.models.user import User
+from app.models.doctor import Doctor
+from app.models.surgery_record import SurgeryRecord
 from app.schemas.user import UserRegister, UserLogin, UserBind, UserLoginResponse
 from app.utils import (
     get_password_hash,
@@ -105,6 +109,7 @@ async def login(
                 "id": user.id,
                 "phone_number": user.phone_number,
                 "username": user.username,
+                "avatar_url": user.avatar_url,
                 "created_at": user.created_at.strftime("%Y-%m-%d %H:%M:%S") if user.created_at else None,
                 "updated_at": user.updated_at.strftime("%Y-%m-%d %H:%M:%S") if user.updated_at else None,
                 "deleted_at": user.deleted_at.strftime("%Y-%m-%d %H:%M:%S") if user.deleted_at else None
@@ -120,7 +125,6 @@ async def get_user_info(
     db = Depends(get_db)
 ):
     """获取用户信息"""
-    # 如果没有提供user_id，使用当前用户ID
     target_user_id = user_id if user_id else current_user["user_id"]
 
     user = await User.filter(
@@ -131,6 +135,29 @@ async def get_user_info(
     if not user:
         return error_response(code="10004", msg="用户不存在")
 
+    responsible_doctor_info = None
+    if user.responsible_doctor_id:
+        doctor = await Doctor.filter(id=user.responsible_doctor_id).first()
+        if doctor:
+            responsible_doctor_info = {
+                "id": doctor.id,
+                "username": doctor.username,
+                "title": doctor.title,
+                "department_id": doctor.department_id,
+                "phone_number": doctor.phone_number
+            }
+
+    surgery_records = await SurgeryRecord.filter(patient_id=target_user_id).all()
+    surgery_list = []
+    for surgery in surgery_records:
+        surgery_list.append({
+            "id": surgery.id,
+            "surgery_name": surgery.surgery_name,
+            "surgery_date": surgery.surgery_date.strftime("%Y-%m-%d") if surgery.surgery_date else None,
+            "hospital": surgery.hospital,
+            "surgery_type": surgery.surgery_type
+        })
+
     user_info = {
         "id": user.id,
         "phone_number": user.phone_number,
@@ -139,6 +166,9 @@ async def get_user_info(
         "birth": user.birth,
         "ethnicity": user.ethnicity,
         "origin": user.origin,
+        "avatar_url": user.avatar_url,
+        "responsible_doctor": responsible_doctor_info,
+        "surgery_records": surgery_list,
         "created_at": user.created_at.strftime("%Y-%m-%d %H:%M:%S") if user.created_at else None,
         "updated_at": user.updated_at.strftime("%Y-%m-%d %H:%M:%S") if user.updated_at else None,
         "deleted_at": user.deleted_at.strftime("%Y-%m-%d %H:%M:%S") if user.deleted_at else None
@@ -227,3 +257,97 @@ async def refresh_token(
         )
     except Exception:
         return error_response(code="10005", msg="刷新令牌已过期")
+
+
+@router.post("/update")
+async def update_user_info(
+    username: str = Form(None, description="用户名"),
+    password: str = Form(None, min_length=6, max_length=72, description="密码，至少6位"),
+    avatar_url: str = Form(None, description="头像URL"),
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db)
+):
+    """更新用户信息
+
+    支持form-data和JSON两种格式
+    """
+    user = await User.filter(
+        id=current_user["user_id"],
+        deleted_at__isnull=True
+    ).first()
+
+    if not user:
+        return error_response(code="10004", msg="用户不存在")
+
+    update_data = {}
+    
+    if username:
+        update_data["username"] = username
+    
+    if password:
+        update_data["password"] = get_password_hash(password)
+    
+    if avatar_url:
+        update_data["avatar_url"] = avatar_url
+
+    if not update_data:
+        return error_response(code="10006", msg="没有需要更新的内容")
+
+    await user.update_from_dict(update_data)
+    await user.save()
+
+    return success_response(
+        msg="更新成功",
+        data={
+            "id": user.id,
+            "phone_number": user.phone_number,
+            "username": user.username,
+            "avatar_url": user.avatar_url,
+            "updated_at": user.updated_at.strftime("%Y-%m-%d %H:%M:%S") if user.updated_at else None
+        }
+    )
+
+
+@router.post("/avatar")
+async def upload_avatar(
+    file: UploadFile = File(..., description="头像图片"),
+    current_user: dict = Depends(get_current_user),
+    db = Depends(get_db)
+):
+    """上传用户头像"""
+    user = await User.filter(
+        id=current_user["user_id"],
+        deleted_at__isnull=True
+    ).first()
+
+    if not user:
+        return error_response(code="10004", msg="用户不存在")
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        return error_response(code="10007", msg="请上传图片文件")
+
+    allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+    if file.content_type not in allowed_types:
+        return error_response(code="10007", msg="仅支持 JPG、PNG、GIF、WEBP 格式")
+
+    upload_dir = "uploads/avatars"
+    os.makedirs(upload_dir, exist_ok=True)
+
+    file_ext = file.filename.split(".")[-1] if file.filename and "." in file.filename else "jpg"
+    new_filename = f"{current_user['user_id']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.{file_ext}"
+    file_path = os.path.join(upload_dir, new_filename)
+
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    avatar_url = f"/uploads/avatars/{new_filename}"
+    user.avatar_url = avatar_url
+    await user.save()
+
+    return success_response(
+        msg="头像上传成功",
+        data={
+            "avatar_url": avatar_url
+        }
+    )

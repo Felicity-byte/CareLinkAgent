@@ -3,7 +3,10 @@
 import grpc
 import warnings
 
-import medical_ai_pb2 as medical__ai__pb2
+try:
+    import medical_ai_pb2 as medical__ai__pb2
+except ImportError:
+    import connect.medical_ai_pb2 as medical__ai__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__

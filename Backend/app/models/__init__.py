@@ -7,6 +7,7 @@ from app.models.ai_diagnosis_report import AIDiagnosisReport
 from app.models.appointment import Appointment
 from app.models.visit_record import VisitRecord
 from app.models.medical_image import MedicalImage
+from app.models.surgery_record import SurgeryRecord
 
 __all__ = [
     "User",
@@ -16,5 +17,6 @@ __all__ = [
     "AIDiagnosisReport",
     "Appointment",
     "VisitRecord",
-    "MedicalImage"
+    "MedicalImage",
+    "SurgeryRecord"
 ]

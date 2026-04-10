@@ -258,11 +258,16 @@ def extract_symptoms(message: str) -> List[str]:
     return symptoms
 
 
-def create_session(patient_id: str, patient_name: str, surgery_date: str) -> dict:
+def create_session(patient_id: str, patient_name: str, surgery_date: str, surgery_type: str = None) -> dict:
     """创建会话"""
     session = session_mgr.session_manager.create_session(
         patient_id, patient_name, surgery_date
     )
+    
+    if surgery_type:
+        print(f"[DEBUG] 设置手术类型: {surgery_type}")
+        session.set_surgery_type(surgery_type)
+        print(f"[DEBUG] 会话状态: {session.status}, 手术类型: {session.surgery_type}")
 
     return {
         "session_id": session.session_id,
@@ -395,6 +400,8 @@ def chat_stream(session_id: str, message: str, is_end: bool = False, image_base6
             return
 
     session.add_message("patient", message)
+    
+    print(f"[DEBUG] 会话状态: {session.status}, 手术类型: {session.surgery_type}")
 
     if session.status == session_mgr.SessionStatus.WAITING_SURGERY:
         surgery_type = extract_surgery_type(message)
@@ -430,6 +437,41 @@ def chat_stream(session_id: str, message: str, is_end: bool = False, image_base6
         }
         return
 
+    if session.status == session_mgr.SessionStatus.WAITING_SURGERY_CONFIRM:
+        if is_surgery_confirmed(message):
+            session.confirm_surgery()
+            
+            response_text = prompts.SURGERY_CONFIRMED_PROMPT.format(
+                SurgeryType=session.surgery_type
+            )
+            
+            session.add_message("ai", response_text)
+            
+            yield {
+                "content": response_text,
+                "is_final": False,
+                "reference": ""
+            }
+        else:
+            response_text = "好的，请告诉我您实际做的是什么手术？例如：阑尾切除手术、胆囊切除术等。"
+            session.status = session_mgr.SessionStatus.WAITING_SURGERY
+            session.surgery_type = None
+            
+            session.add_message("ai", response_text)
+            
+            yield {
+                "content": response_text,
+                "is_final": False,
+                "reference": ""
+            }
+        
+        yield {
+            "content": "",
+            "is_final": True,
+            "reference": ""
+        }
+        return
+
     if is_end or should_end_conversation(session):
         yield from end_chat_stream(session)
         return
@@ -451,6 +493,20 @@ def extract_surgery_type(text: str) -> Optional[str]:
             return surgery + "手术"
     
     return None
+
+
+CONFIRM_KEYWORDS = ["对", "是", "对的", "是的", "没错", "正确", "确认", "没错", "嗯", "好的", "ok", "OK"]
+
+def is_surgery_confirmed(text: str) -> bool:
+    """检测患者是否确认手术信息"""
+    text = text.strip().lower()
+    print(f"[DEBUG] 检测确认关键词, 文本: '{text}'")
+    for keyword in CONFIRM_KEYWORDS:
+        if keyword.lower() in text:
+            print(f"[DEBUG] 匹配到关键词: '{keyword}'")
+            return True
+    print(f"[DEBUG] 未匹配到确认关键词")
+    return False
 
 
 def should_end_conversation(session) -> bool:
@@ -510,7 +566,7 @@ def normal_chat_stream(session, message: str) -> Generator[dict, None, None]:
     for retry in range(MAX_RETRIES):
         try:
             response = GLOBAL_CLIENT.chat.completions.create(
-                model="glm-4.7-flash",
+                model="glm-4-flash",
                 messages=messages,
                 temperature=config.TEMPERATURE if config.TEMPERATURE > 0 else 0.7,
                 max_tokens=config.MAX_TOKENS,
@@ -618,7 +674,7 @@ def generate_medical_report(session) -> dict:
     for retry in range(MAX_RETRIES):
         try:
             response = GLOBAL_CLIENT.chat.completions.create(
-                model="glm-4.7-flash",
+                model="glm-4-flash",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
                 max_tokens=config.MAX_TOKENS,

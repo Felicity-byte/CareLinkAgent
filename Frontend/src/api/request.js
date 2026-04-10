@@ -3,7 +3,7 @@ import { useAuthStore } from '../stores/auth'
 
 const service = axios.create({
     baseURL: '/api',
-    timeout: 5000
+    timeout: 30000
 })
 
 let isRefreshing = false

@@ -53,8 +53,14 @@ const notifications = ref([
 const userInfo = ref({
     username: '',
     phone_number: '',
-    password: ''
+    password: '',
+    confirmPassword: '',
+    avatar_url: ''
 })
+const responsibleDoctor = ref(null)
+const surgeryRecords = ref([])
+const avatarInputRef = ref(null)
+const uploadingAvatar = ref(false)
 
 // 图片分析相关状态
 const fileInputRef = ref(null)
@@ -62,6 +68,9 @@ const analyzingImage = ref(false)
 const pendingQuestions = ref([])
 const waitingForAnswers = ref(false)
 const currentSessionId = ref(`sess_${Date.now()}`)
+
+// AI导诊会话
+const aiSessionId = ref('')
 
 const historyList = ref([
     { id: 1, title: '头痛症状咨询', time: '今天 14:30', timestamp: Date.now() },
@@ -113,6 +122,24 @@ const addMessage = (content, isUser = false) => {
     scrollToBottom()
 }
 
+const createAISession = async () => {
+    try {
+        console.log('[DEBUG] 创建AI会话, patient_id:', authStore.user?.id)
+        const res = await request.post('/ai/create-session', {
+            patient_id: authStore.user?.id,
+            patient_name: authStore.user?.username || '患者'
+        })
+        console.log('[DEBUG] AI会话创建成功:', res.data)
+        aiSessionId.value = res.data.session_id
+        if (res.data.welcome_message) {
+            addMessage(res.data.welcome_message, false)
+        }
+    } catch (err) {
+        console.error('创建AI会话失败', err)
+        addMessage('您好！我是 AI 智能导诊助手。请告诉我您的症状或健康问题，我会为您提供专业的医疗建议和分诊指导。', false)
+    }
+}
+
 const handleSend = async () => {
     const text = inputText.value.trim()
     if (!text || loading.value) return
@@ -121,6 +148,11 @@ const handleSend = async () => {
     if (waitingForAnswers.value) {
         await handlePatientAnswer(text)
         return
+    }
+    
+    // 如果没有AI会话，先创建
+    if (!aiSessionId.value) {
+        await createAISession()
     }
     
     // 如果是第一条用户消息，更新标题
@@ -132,26 +164,24 @@ const handleSend = async () => {
     addMessage(text, true)
     loading.value = true
     
-    setTimeout(async () => {
-        const responses = [
-            '根据您的描述，建议您前往内科就诊。请问还有其他症状吗？',
-            '感谢您的详细描述。为了更准确地判断，请问您是否有发热的情况？',
-            '我理解您的困扰。这种情况持续多久了？是否有过类似经历？',
-            '根据症状分析，您可能需要做一些检查。请问您的年龄大概是多少？',
-            '好的，我已经记录下来。请问这些症状是突然出现的还是逐渐加重的？',
-            '了解。请问您最近有没有服用什么药物？',
-            '收到，我会继续为您分析。还有其他需要补充的信息吗？'
-        ]
+    try {
+        const res = await request.post('/ai/chat', {
+            session_id: aiSessionId.value,
+            message: text,
+            is_end: false
+        })
         
-        const randomResponse = responses[Math.floor(Math.random() * responses.length)]
-        addMessage(randomResponse, false)
+        addMessage(res.data.content, false)
+    } catch (err) {
+        console.error('AI回复失败', err)
+        addMessage('抱歉，我暂时无法回复。请稍后再试。', false)
+    } finally {
         loading.value = false
-        
         await nextTick()
         if (textareaRef.value) {
             textareaRef.value.focus()
         }
-    }, 800 + Math.random() * 1200)
+    }
 }
 
 // 图片上传相关方法
@@ -287,7 +317,18 @@ const handleKeyDown = (e) => {
     }
 }
 
-const startNewChat = () => {
+const startNewChat = async () => {
+    // 结束旧会话
+    if (aiSessionId.value) {
+        try {
+            await request.post('/ai/end-session', {
+                session_id: aiSessionId.value
+            })
+        } catch (err) {
+            console.error('结束AI会话失败', err)
+        }
+    }
+    
     if (messages.value.length > 1) {
         const firstUserMsg = messages.value.find(m => m.isUser)
         const title = firstUserMsg ? firstUserMsg.content.slice(0, 15) + (firstUserMsg.content.length > 15 ? '...' : '') : '新对话'
@@ -300,19 +341,38 @@ const startNewChat = () => {
     }
     messages.value = []
     chatTitle.value = 'AI 智能导诊'
-    setTimeout(() => {
-        addMessage('您好！我是 AI 智能导诊助手。请告诉我您的症状或健康问题，我会为您提供专业的医疗建议和分诊指导。', false)
-    }, 300)
+    aiSessionId.value = ''
+    
+    // 创建新会话
+    await createAISession()
 }
 
-const openSettings = () => {
+const openSettings = async () => {
     showProfileMenu.value = false
     showSettingsDialog.value = true
     settingsActiveTab.value = 'general'
-    userInfo.value = {
-        username: authStore.user?.username || '',
-        phone_number: authStore.user?.phone_number || '',
-        password: ''
+    
+    try {
+        const res = await request.get('/user/info')
+        const userData = res.data
+        userInfo.value = {
+            username: userData.username || '',
+            phone_number: userData.phone_number || '',
+            password: '',
+            confirmPassword: '',
+            avatar_url: userData.avatar_url || ''
+        }
+        responsibleDoctor.value = userData.responsible_doctor
+        surgeryRecords.value = userData.surgery_records || []
+    } catch (err) {
+        console.error('获取用户信息失败', err)
+        userInfo.value = {
+            username: authStore.user?.username || '',
+            phone_number: authStore.user?.phone_number || '',
+            password: '',
+            confirmPassword: '',
+            avatar_url: authStore.user?.avatar_url || ''
+        }
     }
 }
 
@@ -324,7 +384,52 @@ const setTheme = (theme) => {
     isDarkMode.value = theme === 'dark'
 }
 
+const triggerAvatarUpload = () => {
+    avatarInputRef.value?.click()
+}
+
+const handleAvatarUpload = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+        alert('请选择图片文件')
+        return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+        alert('图片大小不能超过5MB')
+        return
+    }
+
+    uploadingAvatar.value = true
+    try {
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const res = await request.post('/user/avatar', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        })
+
+        userInfo.value.avatar_url = res.data.avatar_url
+        authStore.user = { ...authStore.user, avatar_url: res.data.avatar_url }
+        localStorage.setItem('user', JSON.stringify(authStore.user))
+        alert('头像上传成功')
+    } catch (err) {
+        console.error('头像上传失败', err)
+        alert('头像上传失败')
+    } finally {
+        uploadingAvatar.value = false
+        event.target.value = ''
+    }
+}
+
 const saveUserInfo = async () => {
+    if (userInfo.value.password && userInfo.value.password !== userInfo.value.confirmPassword) {
+        alert('两次输入的密码不一致')
+        return
+    }
+
     try {
         const updateData = new URLSearchParams()
         if (userInfo.value.username) updateData.append('username', userInfo.value.username)
@@ -417,10 +522,9 @@ const logout = () => {
     router.push({ name: 'login' })
 }
 
-onMounted(() => {
-    setTimeout(() => {
-        addMessage('您好！我是 AI 智能导诊助手。请告诉我您的症状或健康问题，我会为您提供专业的医疗建议和分诊指导。', false)
-    }, 300)
+onMounted(async () => {
+    // 创建AI会话
+    await createAISession()
     
     isMobile.value = window.innerWidth <= 768
     sidebarCollapsed.value = isMobile.value
@@ -525,7 +629,7 @@ onMounted(() => {
         <div class="user-area-wrapper" v-if="!sidebarCollapsed">
           <div class="user-area" @click="goToProfile">
             <div class="user-avatar">
-              <img v-if="authStore.user?.avatar" :src="authStore.user.avatar" alt="头像" class="user-avatar-img" />
+              <img v-if="authStore.user?.avatar_url" :src="authStore.user.avatar_url" alt="头像" class="user-avatar-img" />
               <el-icon v-else><User /></el-icon>
             </div>
             <div class="user-info">
@@ -620,18 +724,19 @@ onMounted(() => {
                   <span class="ai-label">AI智能导诊助手</span>
                 </div>
                 <div class="ai-content">
-                  <p>{{ msg.content }}</p>
+                  <pre class="message-text">{{ msg.content }}</pre>
                 </div>
                 <span class="msg-time">{{ msg.time }}</span>
               </div>
             </template>
             <template v-else>
-              <div class="msg-avatar">
-                <el-icon class="user-avatar"><UserFilled /></el-icon>
+              <div class="msg-avatar user-msg-avatar">
+                <img v-if="authStore.user?.avatar_url" :src="authStore.user.avatar_url" alt="头像" class="user-avatar-img" />
+                <el-icon v-else class="user-avatar-icon"><UserFilled /></el-icon>
               </div>
-              <div class="msg-body">
+              <div class="msg-body user-msg-body">
                 <div class="user-message">
-                  <p>{{ msg.content }}</p>
+                  <pre class="message-text">{{ msg.content }}</pre>
                 </div>
                 <span class="msg-time">{{ msg.time }}</span>
               </div>
@@ -759,6 +864,18 @@ onMounted(() => {
             </div>
             
             <div v-if="settingsActiveTab === 'account'" class="account-settings">
+              <div class="avatar-section">
+                <div class="avatar-preview" @click="triggerAvatarUpload">
+                  <img v-if="userInfo.avatar_url" :src="userInfo.avatar_url" alt="头像" class="avatar-img" />
+                  <el-icon v-else class="avatar-placeholder"><User /></el-icon>
+                  <div class="avatar-overlay">
+                    <span v-if="!uploadingAvatar">更换头像</span>
+                    <span v-else>上传中...</span>
+                  </div>
+                </div>
+                <input ref="avatarInputRef" type="file" accept="image/*" @change="handleAvatarUpload" style="display: none" />
+              </div>
+              
               <div class="form-item">
                 <label>用户名</label>
                 <input v-model="userInfo.username" type="text" placeholder="请输入用户名" />
@@ -771,6 +888,37 @@ onMounted(() => {
                 <label>新密码</label>
                 <input v-model="userInfo.password" type="password" placeholder="请输入新密码（不修改请留空）" />
               </div>
+              <div v-if="userInfo.password" class="form-item">
+                <label>确认密码</label>
+                <input v-model="userInfo.confirmPassword" type="password" placeholder="请再次输入新密码" />
+              </div>
+              
+              <div v-if="responsibleDoctor" class="doctor-section">
+                <label class="section-label">负责医生 <span class="readonly-hint">(系统分配，不可修改)</span></label>
+                <div class="doctor-card">
+                  <div class="doctor-avatar">
+                    <el-icon><User /></el-icon>
+                  </div>
+                  <div class="doctor-info">
+                    <div class="doctor-name">{{ responsibleDoctor.username }}</div>
+                    <div class="doctor-title">{{ responsibleDoctor.title || '医生' }}</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div v-if="surgeryRecords.length > 0" class="surgery-section">
+                <label class="section-label">手术记录 <span class="readonly-hint">(系统记录，不可修改)</span></label>
+                <div class="surgery-list">
+                  <div v-for="surgery in surgeryRecords" :key="surgery.id" class="surgery-item">
+                    <div class="surgery-info">
+                      <div class="surgery-name">{{ surgery.surgery_name }}</div>
+                      <div class="surgery-hospital" v-if="surgery.hospital">{{ surgery.hospital }}</div>
+                    </div>
+                    <div class="surgery-date">{{ surgery.surgery_date }}</div>
+                  </div>
+                </div>
+              </div>
+              
               <button class="save-btn" @click="saveUserInfo">保存修改</button>
             </div>
             
@@ -1663,6 +1811,15 @@ onMounted(() => {
     font-size: 18px;
 }
 
+.message-text {
+    margin: 0;
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
 .dark-mode .ai-content { color: #ececec; }
 .light-mode .ai-content { color: #333; }
 
@@ -1670,18 +1827,6 @@ onMounted(() => {
     flex: 1;
     max-width: 70%;
 }
-
-.user-message {
-    line-height: 1.8;
-}
-
-.user-message p {
-    margin: 0;
-    font-size: 18px;
-}
-
-.dark-mode .user-message { color: #ececec; }
-.light-mode .user-message { color: #333; }
 
 .msg-bubble {
     padding: 14px 18px;
@@ -1720,6 +1865,46 @@ onMounted(() => {
 
 .user-row .msg-time {
     text-align: right;
+}
+
+.user-msg-body {
+    text-align: right;
+}
+
+.user-message {
+    display: inline-block;
+    text-align: left;
+    line-height: 1.8;
+    max-width: 100%;
+}
+
+.user-msg-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.user-msg-avatar .user-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.user-msg-avatar .user-avatar-icon {
+    width: 36px;
+    height: 36px;
+    background: #00b894;
+    color: #fff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
 }
 
 .typing-bubble {
@@ -2099,6 +2284,158 @@ onMounted(() => {
     color: #1677ff;
 }
 
+.avatar-section {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 24px;
+}
+
+.avatar-preview {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #e8f4ff 0%, #f0f0f0 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    border: 3px solid #fff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s;
+}
+
+.avatar-preview:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+.avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-placeholder {
+    font-size: 40px;
+    color: #999;
+}
+
+.avatar-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 12px;
+    padding: 4px 0;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.avatar-preview:hover .avatar-overlay {
+    opacity: 1;
+}
+
+.doctor-section, .surgery-section {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e5e5;
+}
+
+.section-label {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 12px;
+}
+
+.readonly-hint {
+    font-size: 12px;
+    font-weight: 400;
+    color: #999;
+    margin-left: 4px;
+}
+
+.doctor-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    background: linear-gradient(135deg, #e8f4ff 0%, #f5f9ff 100%);
+    border-radius: 12px;
+    border: 1px solid rgba(22, 119, 255, 0.1);
+}
+
+.doctor-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1677ff 0%, #4096ff 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 24px;
+}
+
+.doctor-info {
+    flex: 1;
+}
+
+.doctor-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.doctor-title {
+    font-size: 13px;
+    color: #666;
+    margin-top: 2px;
+}
+
+.surgery-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.surgery-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e5e5e5;
+}
+
+.surgery-info {
+    flex: 1;
+}
+
+.surgery-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: #333;
+}
+
+.surgery-hospital {
+    font-size: 12px;
+    color: #999;
+    margin-top: 2px;
+}
+
+.surgery-date {
+    font-size: 13px;
+    color: #999;
+}
+
 .form-item {
     margin-bottom: 20px;
 }
@@ -2134,6 +2471,7 @@ onMounted(() => {
 }
 
 .save-btn {
+    margin-top: 15px;
     padding: 12px 32px;
     background: #1677ff;
     color: #fff;
