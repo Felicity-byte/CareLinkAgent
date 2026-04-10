@@ -566,7 +566,7 @@ def normal_chat_stream(session, message: str) -> Generator[dict, None, None]:
     for retry in range(MAX_RETRIES):
         try:
             response = GLOBAL_CLIENT.chat.completions.create(
-                model="glm-4-flash",
+                model="glm-4.7-flash",
                 messages=messages,
                 temperature=config.TEMPERATURE if config.TEMPERATURE > 0 else 0.7,
                 max_tokens=config.MAX_TOKENS,
@@ -674,7 +674,7 @@ def generate_medical_report(session) -> dict:
     for retry in range(MAX_RETRIES):
         try:
             response = GLOBAL_CLIENT.chat.completions.create(
-                model="glm-4-flash",
+                model="glm-4.7-flash",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
                 max_tokens=config.MAX_TOKENS,
