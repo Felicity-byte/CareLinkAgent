@@ -247,6 +247,51 @@ async def list_patients(
     return success_response(data=patient_list)
 
 
+@router.get("/departments")
+async def list_departments(
+    db = Depends(get_db)
+):
+    """获取所有科室列表"""
+    departments = await Department.filter(deleted_at__isnull=True).all()
+    
+    dept_list = []
+    for dept in departments:
+        dept_list.append({
+            "id": dept.id,
+            "name": dept.name,
+            "code": dept.code
+        })
+    
+    return success_response(data=dept_list)
+
+
+@router.get("/doctors")
+async def list_doctors(
+    department_id: str = Query(None, description="科室ID筛选"),
+    db = Depends(get_db)
+):
+    """获取医生列表（可按科室筛选）"""
+    query = Doctor.filter(deleted_at__isnull=True)
+    
+    if department_id:
+        query = query.filter(department_id=department_id)
+    
+    doctors = await query.all()
+    
+    doctor_list = []
+    for doc in doctors:
+        await doc.fetch_related("department")
+        doctor_list.append({
+            "id": doc.id,
+            "username": doc.username,
+            "title": doc.title,
+            "department_id": doc.department_id,
+            "department_name": doc.department.name if doc.department else None
+        })
+    
+    return success_response(data=doctor_list)
+
+
 @router.post("/report")
 async def submit_diagnosis_report(
     record_id: str = Form(..., description="记录ID"),
@@ -303,3 +348,83 @@ async def get_patient_summary(
         "status": report.report_status,
         "created_at": report.created_at.strftime("%Y-%m-%d %H:%M:%S") if report.created_at else None
     })
+
+
+@router.post("/patient/create")
+async def create_patient(
+    phone_number: str = Form(..., description="手机号"),
+    password: str = Form(..., min_length=6, description="密码，至少6位"),
+    username: str = Form(..., description="姓名"),
+    gender: str = Form(..., description="性别"),
+    responsible_doctor_id: str = Form(..., description="负责医生ID"),
+    birth: str = Form(None, description="出生日期"),
+    ethnicity: str = Form(None, description="民族"),
+    origin: str = Form(None, description="籍贯"),
+    current_doctor: dict = Depends(get_current_doctor),
+    db = Depends(get_db)
+):
+    """医生创建患者账户
+    
+    必填字段:
+    - phone_number: 手机号（11位，用于患者端登录）
+    - password: 密码（至少6位，用于患者端登录）
+    - username: 姓名
+    - gender: 性别
+    - responsible_doctor_id: 负责医生ID
+    
+    选填字段:
+    - birth: 出生日期
+    - ethnicity: 民族
+    - origin: 籍贯
+    """
+    import re
+    
+    if not re.match(r'^1[3-9]\d{9}$', phone_number):
+        return error_response(code="40002", msg="手机号格式不正确")
+    
+    existing_user = await User.filter(
+        phone_number=phone_number,
+        deleted_at__isnull=True
+    ).first()
+    
+    if existing_user:
+        return error_response(code="40003", msg="该手机号已被注册")
+    
+    doctor = await Doctor.filter(id=responsible_doctor_id, deleted_at__isnull=True).first()
+    if not doctor:
+        return error_response(code="40004", msg="选择的医生不存在")
+    
+    hashed_password = get_password_hash(password)
+    
+    user_data = {
+        "id": str(uuid.uuid4()),
+        "phone_number": phone_number,
+        "password": hashed_password,
+        "username": username,
+        "gender": gender,
+        "responsible_doctor_id": responsible_doctor_id
+    }
+    
+    if birth:
+        user_data["birth"] = birth
+    if ethnicity:
+        user_data["ethnicity"] = ethnicity
+    if origin:
+        user_data["origin"] = origin
+    
+    new_user = await User.create(**user_data)
+    
+    return success_response(
+        msg="患者创建成功",
+        data={
+            "id": new_user.id,
+            "phone_number": new_user.phone_number,
+            "username": new_user.username,
+            "gender": new_user.gender,
+            "birth": str(new_user.birth) if new_user.birth else None,
+            "ethnicity": new_user.ethnicity,
+            "origin": new_user.origin,
+            "responsible_doctor_id": new_user.responsible_doctor_id,
+            "created_at": new_user.created_at.strftime("%Y-%m-%d %H:%M:%S") if new_user.created_at else None
+        }
+    )

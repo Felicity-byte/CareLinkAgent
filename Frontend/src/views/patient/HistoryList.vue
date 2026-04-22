@@ -1,74 +1,45 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import request from '../../api/request'
 
 const router = useRouter()
 
-const notifications = ref([
-    {
-        id: 1,
-        type: 'appointment',
-        title: '预约提醒',
-        content: '您预约的内科门诊将于明天上午9:00开始，请准时就诊。',
-        detail: '门诊楼3楼内科诊室 · 携带身份证和医保卡',
-        time: new Date(Date.now() - 1000 * 60 * 30),
-        read: false
-    },
-    {
-        id: 2,
-        type: 'system',
-        title: '健康档案更新',
-        content: '您的健康档案已更新完成，可以在个人中心查看详细信息。',
-        time: new Date(Date.now() - 1000 * 60 * 60 * 24),
-        read: true
-    },
-    {
-        id: 3,
-        type: 'appointment',
-        title: '就诊提醒',
-        content: '您有一个预约将在后天进行，请注意时间安排。',
-        time: new Date(Date.now() - 1000 * 60 * 60 * 48),
-        read: false
-    },
-    {
-        id: 4,
-        type: 'system',
-        title: '系统维护通知',
-        content: '系统将于本周六凌晨2:00-4:00进行维护升级，届时部分功能可能无法使用。',
-        time: new Date(Date.now() - 1000 * 60 * 60 * 72),
-        read: true
-    }
-])
-
+const sessions = ref([])
+const loading = ref(false)
 const activeTab = ref('all')
 
-const unreadCount = computed(() => {
-    return notifications.value.filter(n => !n.read).length
-})
-
-const filteredNotifications = computed(() => {
-    if (activeTab.value === 'unread') {
-        return notifications.value.filter(n => !n.read)
+const filteredSessions = computed(() => {
+    if (activeTab.value === 'recent') {
+        const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+        return sessions.value.filter(s => new Date(s.updated_at).getTime() > weekAgo)
     }
-    return notifications.value
+    return sessions.value
 })
 
 const goBack = () => {
     router.push({ name: 'ai-chat' })
 }
 
-const markAsRead = (id) => {
-    const notification = notifications.value.find(n => n.id === id)
-    if (notification) {
-        notification.read = true
+const openSession = (sessionId) => {
+    router.push({ name: 'ai-chat', query: { session_id: sessionId } })
+}
+
+const deleteSession = async (sessionId) => {
+    if (!confirm('确定要删除这条问诊记录吗？')) return
+    
+    try {
+        await request.delete(`/ai/sessions/${sessionId}`)
+        sessions.value = sessions.value.filter(s => s.id !== sessionId)
+    } catch (err) {
+        console.error('删除失败', err)
+        alert('删除失败')
     }
 }
 
-const markAllAsRead = () => {
-    notifications.value.forEach(n => n.read = true)
-}
-
-const formatTime = (date) => {
+const formatTime = (dateStr) => {
+    if (!dateStr) return ''
+    const date = new Date(dateStr)
     const now = new Date()
     const diff = now - date
     const minutes = Math.floor(diff / (1000 * 60))
@@ -82,38 +53,39 @@ const formatTime = (date) => {
     return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
 }
 
-const getTypeInfo = (type) => {
-    const types = {
-        appointment: { 
-            icon: 'Calendar', 
-            color: '#1677ff', 
-            bg: 'linear-gradient(135deg, #1677ff 0%, #4096ff 100%)',
-            label: '预约' 
-        },
-        system: { 
-            icon: 'Bell', 
-            color: '#722ed1', 
-            bg: 'linear-gradient(135deg, #722ed1 0%, #9254de 100%)',
-            label: '系统' 
-        }
-    }
-    return types[type] || { icon: 'Document', color: '#666', bg: '#666', label: '通知' }
+const formatDate = (dateStr) => {
+    if (!dateStr) return ''
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
+
+const fetchSessions = async () => {
+    loading.value = true
+    try {
+        const res = await request.get('/ai/sessions')
+        sessions.value = res.data.sessions || []
+    } catch (err) {
+        console.error('获取会话列表失败', err)
+    } finally {
+        loading.value = false
+    }
+}
+
+onMounted(() => {
+    fetchSessions()
+})
 </script>
 
 <template>
-  <div class="notification-page">
+  <div class="history-page">
     <header class="page-header">
       <button class="back-btn" @click="goBack">
         <el-icon><ArrowLeft /></el-icon>
       </button>
       <div class="header-center">
-        <h1 class="page-title">消息通知</h1>
-        <span v-if="unreadCount > 0" class="unread-count">{{ unreadCount }}条未读</span>
+        <h1 class="page-title">问诊记录</h1>
+        <span class="session-count">{{ sessions.length }}条记录</span>
       </div>
-      <button v-if="unreadCount > 0" class="mark-all-btn" @click="markAllAsRead">
-        全部已读
-      </button>
     </header>
 
     <div class="tabs-wrapper">
@@ -123,65 +95,61 @@ const getTypeInfo = (type) => {
           :class="{ active: activeTab === 'all' }"
           @click="activeTab = 'all'"
         >
-          全部消息
-          <span class="tab-count">{{ notifications.length }}</span>
+          全部记录
+          <span class="tab-count">{{ sessions.length }}</span>
         </button>
         <button 
           class="tab-btn" 
-          :class="{ active: activeTab === 'unread' }"
-          @click="activeTab = 'unread'"
+          :class="{ active: activeTab === 'recent' }"
+          @click="activeTab = 'recent'"
         >
-          未读消息
-          <span v-if="unreadCount > 0" class="tab-count highlight">{{ unreadCount }}</span>
+          最近一周
         </button>
       </div>
     </div>
 
     <main class="page-content">
-      <div v-if="filteredNotifications.length === 0" class="empty-state">
-        <div class="empty-illustration">
-          <div class="empty-circle">
-            <el-icon class="empty-icon"><Bell /></el-icon>
-          </div>
-          <div class="empty-dots">
-            <span></span><span></span><span></span>
-          </div>
-        </div>
-        <h3 class="empty-title">暂无消息</h3>
-        <p class="empty-desc">新的消息会在这里显示</p>
+      <div v-if="loading" class="loading-state">
+        <el-icon class="loading-icon"><Loading /></el-icon>
+        <span>加载中...</span>
       </div>
 
-      <div v-else class="notification-list">
+      <div v-else-if="filteredSessions.length === 0" class="empty-state">
+        <div class="empty-illustration">
+          <div class="empty-circle">
+            <el-icon class="empty-icon"><ChatDotRound /></el-icon>
+          </div>
+        </div>
+        <h3 class="empty-title">暂无问诊记录</h3>
+        <p class="empty-desc">开始AI问诊后，记录会在这里显示</p>
+      </div>
+
+      <div v-else class="session-list">
         <div 
-          v-for="notification in filteredNotifications" 
-          :key="notification.id" 
-          class="notification-item"
-          :class="{ unread: !notification.read }"
-          @click="markAsRead(notification.id)"
+          v-for="session in filteredSessions" 
+          :key="session.id" 
+          class="session-item"
+          @click="openSession(session.id)"
         >
-          <div class="item-indicator" v-if="!notification.read"></div>
-          
-          <div class="item-icon" :style="{ background: getTypeInfo(notification.type).bg }">
-            <el-icon v-if="notification.type === 'appointment'"><Calendar /></el-icon>
-            <el-icon v-else-if="notification.type === 'system'"><Bell /></el-icon>
-            <el-icon v-else><Document /></el-icon>
+          <div class="item-icon">
+            <el-icon><ChatDotRound /></el-icon>
           </div>
           
           <div class="item-content">
             <div class="item-header">
-              <span class="item-type" :style="{ color: getTypeInfo(notification.type).color }">
-                {{ getTypeInfo(notification.type).label }}
-              </span>
-              <span class="item-time">{{ formatTime(notification.time) }}</span>
+              <span class="item-title">{{ session.title || 'AI问诊' }}</span>
+              <span class="item-time">{{ formatTime(session.updated_at) }}</span>
             </div>
-            <h3 class="item-title">{{ notification.title }}</h3>
-            <p class="item-text">{{ notification.content }}</p>
-            <p v-if="notification.detail" class="item-detail">{{ notification.detail }}</p>
+            <div class="item-meta">
+              <span v-if="session.surgery_type" class="item-tag">{{ session.surgery_type }}</span>
+              <span class="item-count">{{ session.message_count }}条对话</span>
+            </div>
+            <div class="item-date">{{ formatDate(session.created_at) }}</div>
           </div>
           
-          <div class="item-action">
-            <el-icon><ArrowRight /></el-icon>
-          </div>
+          <button class="delete-btn" @click.stop="deleteSession(session.id)">
+            <el-icon><Delete /></el-icon>
+          </button>
         </div>
       </div>
     </main>
@@ -189,7 +157,7 @@ const getTypeInfo = (type) => {
 </template>
 
 <style scoped>
-.notification-page {
+.history-page {
     min-height: 100vh;
     background: #f5f7fa;
 }
@@ -239,26 +207,9 @@ const getTypeInfo = (type) => {
     margin: 0;
 }
 
-.unread-count {
+.session-count {
     font-size: 11px;
-    color: #1677ff;
-    font-weight: 500;
-}
-
-.mark-all-btn {
-    padding: 6px 14px;
-    border: none;
-    border-radius: 16px;
-    background: #1677ff;
-    color: #fff;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.mark-all-btn:hover {
-    background: #0958d9;
+    color: #999;
 }
 
 .tabs-wrapper {
@@ -310,15 +261,30 @@ const getTypeInfo = (type) => {
     font-weight: 600;
 }
 
-.tab-count.highlight {
-    background: #ff4d4f;
-    color: #fff;
-}
-
 .page-content {
     padding: 12px;
     max-width: 600px;
     margin: 0 auto;
+}
+
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    color: #999;
+    gap: 12px;
+}
+
+.loading-icon {
+    font-size: 32px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 
 .empty-state {
@@ -330,7 +296,6 @@ const getTypeInfo = (type) => {
 }
 
 .empty-illustration {
-    position: relative;
     margin-bottom: 24px;
 }
 
@@ -350,31 +315,6 @@ const getTypeInfo = (type) => {
     opacity: 0.6;
 }
 
-.empty-dots {
-    position: absolute;
-    bottom: -8px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 6px;
-}
-
-.empty-dots span {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #1677ff;
-    opacity: 0.3;
-}
-
-.empty-dots span:nth-child(2) {
-    opacity: 0.5;
-}
-
-.empty-dots span:nth-child(3) {
-    opacity: 0.7;
-}
-
 .empty-title {
     font-size: 17px;
     font-weight: 600;
@@ -388,14 +328,13 @@ const getTypeInfo = (type) => {
     margin: 0;
 }
 
-.notification-list {
+.session-list {
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 
-.notification-item {
-    position: relative;
+.session-item {
     display: flex;
     align-items: flex-start;
     gap: 12px;
@@ -406,40 +345,16 @@ const getTypeInfo = (type) => {
     transition: all 0.2s;
 }
 
-.notification-item:hover {
+.session-item:hover {
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
     transform: translateY(-1px);
-}
-
-.notification-item.unread {
-    background: #fafbff;
-}
-
-.notification-item.unread::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 16px;
-    bottom: 16px;
-    width: 3px;
-    background: #1677ff;
-    border-radius: 0 3px 3px 0;
-}
-
-.item-indicator {
-    position: absolute;
-    top: 18px;
-    left: 8px;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #1677ff;
 }
 
 .item-icon {
     width: 44px;
     height: 44px;
     border-radius: 12px;
+    background: linear-gradient(135deg, #1677ff 0%, #4096ff 100%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -456,61 +371,67 @@ const getTypeInfo = (type) => {
 .item-header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: space-between;
     margin-bottom: 6px;
-}
-
-.item-type {
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.item-time {
-    font-size: 12px;
-    color: #999;
 }
 
 .item-title {
     font-size: 15px;
     font-weight: 600;
     color: #1a1a1a;
-    margin: 0 0 4px;
-    line-height: 1.4;
-}
-
-.item-text {
-    font-size: 14px;
-    color: #666;
-    line-height: 1.5;
-    margin: 0;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.item-detail {
+.item-time {
     font-size: 12px;
     color: #999;
-    margin: 6px 0 0;
-    padding: 6px 10px;
-    background: #f5f7fa;
-    border-radius: 6px;
+    flex-shrink: 0;
 }
 
-.item-action {
+.item-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.item-tag {
+    font-size: 12px;
+    color: #1677ff;
+    background: #e6f4ff;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.item-count {
+    font-size: 12px;
+    color: #666;
+}
+
+.item-date {
+    font-size: 12px;
+    color: #999;
+}
+
+.delete-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #999;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
-    color: #ccc;
-    font-size: 14px;
+    transition: all 0.2s;
     flex-shrink: 0;
-    margin-top: 10px;
 }
 
-.notification-item:hover .item-action {
-    color: #1677ff;
+.delete-btn:hover {
+    background: #fff1f0;
+    color: #ff4d4f;
 }
 </style>

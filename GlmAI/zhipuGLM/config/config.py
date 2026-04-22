@@ -34,5 +34,5 @@ CHROMA_PERSIST_DIR = os.path.join(_MODULE_DIR, "chroma_db_medical")
 DEFAULT_IMAGE_PATH = os.path.join(_MODULE_DIR, "pic", "tongue_sample.png")
 
 # LLM 参数
-MAX_TOKENS = 2048
+MAX_TOKENS = 512
 TEMPERATURE = 0.0

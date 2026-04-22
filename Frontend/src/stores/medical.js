@@ -184,6 +184,16 @@ export const useMedicalStore = defineStore('medical', {
         }
     },
     actions: {
+        addPatient(patient) {
+            const newId = String(Math.max(...this.patients.map(p => parseInt(p.id)), 0) + 1)
+            const newPatient = {
+                id: newId,
+                ...patient
+            }
+            this.patients.unshift(newPatient)
+            return newPatient
+        },
+        
         addAppointment(appointment) {
             const newId = Math.max(...this.appointments.map(a => a.id), 0) + 1
             const newAppointment = {

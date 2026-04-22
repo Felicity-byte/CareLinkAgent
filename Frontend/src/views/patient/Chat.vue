@@ -55,7 +55,12 @@ const userInfo = ref({
     phone_number: '',
     password: '',
     confirmPassword: '',
-    avatar_url: ''
+    avatar_url: '',
+    gender: '',
+    birth: '',
+    ethnicity: '',
+    origin: '',
+    email: ''
 })
 const responsibleDoctor = ref(null)
 const surgeryRecords = ref([])
@@ -72,14 +77,7 @@ const currentSessionId = ref(`sess_${Date.now()}`)
 // AI导诊会话
 const aiSessionId = ref('')
 
-const historyList = ref([
-    { id: 1, title: '头痛症状咨询', time: '今天 14:30', timestamp: Date.now() },
-    { id: 2, title: '发烧处理建议', time: '昨天 09:15', timestamp: Date.now() - 86400000 },
-    { id: 3, title: '胃痛科室推荐', time: '3天前', timestamp: Date.now() - 86400000 * 3 },
-    { id: 4, title: '术后护理咨询', time: '5天前', timestamp: Date.now() - 86400000 * 5 },
-    { id: 5, title: '伤口处理建议', time: '8天前', timestamp: Date.now() - 86400000 * 8 },
-    { id: 6, title: '旧病历咨询', time: '半个月前', timestamp: Date.now() - 86400000 * 15 },
-])
+const historyList = ref([])
 
 const notificationCount = computed(() => {
     return notifications.value.filter(n => !n.read).length
@@ -105,6 +103,37 @@ const olderHistory = computed(() => {
     return historyList.value.filter(item => item.timestamp < weekAgo)
 })
 
+const fetchHistoryList = async () => {
+    try {
+        const res = await request.get('/ai/sessions')
+        const sessions = res.data.sessions || []
+        historyList.value = sessions.map(s => ({
+            id: s.id,
+            title: s.title || 'AI问诊',
+            time: s.updated_at ? formatHistoryTime(s.updated_at) : '',
+            timestamp: s.updated_at ? new Date(s.updated_at).getTime() : 0
+        }))
+    } catch (err) {
+        console.error('获取历史记录失败', err)
+    }
+}
+
+const formatHistoryTime = (dateStr) => {
+    if (!dateStr) return ''
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diff = now - date
+    const minutes = Math.floor(diff / (1000 * 60))
+    const hours = Math.floor(diff / (1000 * 60 * 60))
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    
+    if (minutes < 60) return `今天 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
+    if (hours < 24) return `今天 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
+    if (days === 1) return '昨天'
+    if (days < 7) return `${days}天前`
+    return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+}
+
 const scrollToBottom = async () => {
     await nextTick()
     if (chatContainer.value) {
@@ -113,13 +142,15 @@ const scrollToBottom = async () => {
 }
 
 const addMessage = (content, isUser = false) => {
-    messages.value.push({
+    const msg = {
         id: Date.now(),
         content,
         isUser,
         time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-    })
+    }
+    messages.value.push(msg)
     scrollToBottom()
+    return msg
 }
 
 const createAISession = async () => {
@@ -143,38 +174,76 @@ const createAISession = async () => {
 const handleSend = async () => {
     const text = inputText.value.trim()
     if (!text || loading.value) return
-    
-    // 如果正在等待回答，处理患者回答
+
     if (waitingForAnswers.value) {
         await handlePatientAnswer(text)
         return
     }
-    
-    // 如果没有AI会话，先创建
+
     if (!aiSessionId.value) {
         await createAISession()
     }
-    
-    // 如果是第一条用户消息，更新标题
+
     if (messages.value.length === 0 || chatTitle.value === 'AI 智能导诊') {
         chatTitle.value = text.slice(0, 15) + (text.length > 15 ? '...' : '')
     }
-    
+
     inputText.value = ''
     addMessage(text, true)
     loading.value = true
-    
+
+    const aiMessageIndex = messages.value.length
+    messages.value.push({
+        id: Date.now(),
+        content: '',
+        isUser: false,
+        time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    })
+
     try {
-        const res = await request.post('/ai/chat', {
-            session_id: aiSessionId.value,
-            message: text,
-            is_end: false
+        const response = await fetch('/api/ai/chat/stream', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authStore.token}`
+            },
+            body: JSON.stringify({
+                session_id: aiSessionId.value,
+                message: text,
+                is_end: false
+            })
         })
-        
-        addMessage(res.data.content, false)
+
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            const chunk = decoder.decode(value)
+            const lines = chunk.split('\n')
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6))
+                        if (data.error) {
+                            console.error('AI回复错误:', data.error)
+                            messages.value[aiMessageIndex].content += '\n[错误: ' + data.error + ']'
+                        } else if (data.content) {
+                            messages.value[aiMessageIndex].content += data.content
+                            scrollToBottom()
+                        }
+                    } catch (e) {
+                        console.warn('解析SSE数据失败:', e)
+                    }
+                }
+            }
+        }
     } catch (err) {
         console.error('AI回复失败', err)
-        addMessage('抱歉，我暂时无法回复。请稍后再试。', false)
+        messages.value[aiMessageIndex].content = '抱歉，我暂时无法回复。请稍后再试。'
     } finally {
         loading.value = false
         await nextTick()
@@ -318,7 +387,6 @@ const handleKeyDown = (e) => {
 }
 
 const startNewChat = async () => {
-    // 结束旧会话
     if (aiSessionId.value) {
         try {
             await request.post('/ai/end-session', {
@@ -329,22 +397,12 @@ const startNewChat = async () => {
         }
     }
     
-    if (messages.value.length > 1) {
-        const firstUserMsg = messages.value.find(m => m.isUser)
-        const title = firstUserMsg ? firstUserMsg.content.slice(0, 15) + (firstUserMsg.content.length > 15 ? '...' : '') : '新对话'
-        historyList.value.unshift({
-            id: Date.now(),
-            title,
-            time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
-            timestamp: Date.now()
-        })
-    }
     messages.value = []
     chatTitle.value = 'AI 智能导诊'
     aiSessionId.value = ''
     
-    // 创建新会话
     await createAISession()
+    fetchHistoryList()
 }
 
 const openSettings = async () => {
@@ -360,7 +418,12 @@ const openSettings = async () => {
             phone_number: userData.phone_number || '',
             password: '',
             confirmPassword: '',
-            avatar_url: userData.avatar_url || ''
+            avatar_url: userData.avatar_url || '',
+            gender: userData.gender || '',
+            birth: userData.birth || '',
+            ethnicity: userData.ethnicity || '',
+            origin: userData.origin || '',
+            email: userData.email || ''
         }
         responsibleDoctor.value = userData.responsible_doctor
         surgeryRecords.value = userData.surgery_records || []
@@ -371,7 +434,12 @@ const openSettings = async () => {
             phone_number: authStore.user?.phone_number || '',
             password: '',
             confirmPassword: '',
-            avatar_url: authStore.user?.avatar_url || ''
+            avatar_url: authStore.user?.avatar_url || '',
+            gender: '',
+            birth: '',
+            ethnicity: '',
+            origin: '',
+            email: ''
         }
     }
 }
@@ -425,7 +493,15 @@ const handleAvatarUpload = async (event) => {
 }
 
 const saveUserInfo = async () => {
-    if (userInfo.value.password && userInfo.value.password !== userInfo.value.confirmPassword) {
+    const hasPassword = userInfo.value.password && userInfo.value.password.trim()
+    const hasConfirmPassword = userInfo.value.confirmPassword && userInfo.value.confirmPassword.trim()
+    
+    if (hasPassword && !hasConfirmPassword) {
+        alert('请确认新密码')
+        return
+    }
+    
+    if (hasPassword && hasConfirmPassword && userInfo.value.password !== userInfo.value.confirmPassword) {
         alert('两次输入的密码不一致')
         return
     }
@@ -433,10 +509,21 @@ const saveUserInfo = async () => {
     try {
         const updateData = new URLSearchParams()
         if (userInfo.value.username) updateData.append('username', userInfo.value.username)
-        if (userInfo.value.password) updateData.append('password', userInfo.value.password)
+        if (hasPassword) updateData.append('password', userInfo.value.password.trim())
+        if (userInfo.value.gender) updateData.append('gender', userInfo.value.gender)
+        if (userInfo.value.birth) updateData.append('birth', userInfo.value.birth)
+        if (userInfo.value.ethnicity) updateData.append('ethnicity', userInfo.value.ethnicity)
+        if (userInfo.value.origin) updateData.append('origin', userInfo.value.origin)
+        if (userInfo.value.email) updateData.append('email', userInfo.value.email)
         
-        await request.post('/user/update', updateData)
-        authStore.user = { ...authStore.user, username: userInfo.value.username }
+        const res = await request.post('/user/update', updateData)
+        authStore.user = { 
+            ...authStore.user, 
+            username: userInfo.value.username,
+            gender: userInfo.value.gender,
+            avatar_url: userInfo.value.avatar_url
+        }
+        localStorage.setItem('user', JSON.stringify(authStore.user))
         alert('保存成功')
     } catch (err) {
         console.error(err)
@@ -448,8 +535,21 @@ const toggleSidebar = () => {
     sidebarCollapsed.value = !sidebarCollapsed.value
 }
 
-const deleteHistory = (id) => {
-    historyList.value = historyList.value.filter(item => item.id !== id)
+const deleteHistory = async (id) => {
+    if (!confirm('确定要删除这条对话记录吗？')) return
+    
+    try {
+        await request.delete(`/ai/sessions/${id}`)
+        historyList.value = historyList.value.filter(item => item.id !== id)
+        if (aiSessionId.value === id) {
+            messages.value = []
+            aiSessionId.value = ''
+            await createAISession()
+        }
+    } catch (err) {
+        console.error('删除失败', err)
+        alert('删除失败')
+    }
 }
 
 const goToProfile = () => {
@@ -522,9 +622,40 @@ const logout = () => {
     router.push({ name: 'login' })
 }
 
+const loadHistorySession = async (sessionId) => {
+    try {
+        loading.value = true
+        const res = await request.get(`/ai/sessions/${sessionId}`)
+        const data = res.data
+        
+        aiSessionId.value = sessionId
+        chatTitle.value = data.session?.title || 'AI问诊'
+        
+        messages.value = data.messages.map(msg => ({
+            id: msg.id,
+            content: msg.content,
+            isUser: msg.role === 'user',
+            time: msg.time
+        }))
+        
+        scrollToBottom()
+    } catch (err) {
+        console.error('加载历史会话失败', err)
+        alert('加载会话失败，请重试')
+    } finally {
+        loading.value = false
+    }
+}
+
 onMounted(async () => {
-    // 创建AI会话
-    await createAISession()
+    fetchHistoryList()
+    
+    const sessionId = route.query.session_id
+    if (sessionId) {
+        await loadHistorySession(sessionId)
+    } else {
+        await createAISession()
+    }
     
     isMobile.value = window.innerWidth <= 768
     sidebarCollapsed.value = isMobile.value
@@ -568,6 +699,7 @@ onMounted(async () => {
             v-for="item in todayHistory"
             :key="item.id"
             class="history-item"
+            @click="loadHistorySession(item.id)"
           >
             <div class="history-info">
               <div class="history-name">{{ item.title }}</div>
@@ -584,6 +716,7 @@ onMounted(async () => {
             v-for="item in weekHistory"
             :key="item.id"
             class="history-item"
+            @click="loadHistorySession(item.id)"
           >
             <div class="history-info">
               <div class="history-name">{{ item.title }}</div>
@@ -600,6 +733,7 @@ onMounted(async () => {
             v-for="item in olderHistory"
             :key="item.id"
             class="history-item"
+            @click="loadHistorySession(item.id)"
           >
             <div class="history-info">
               <div class="history-name">{{ item.title }}</div>
@@ -885,12 +1019,36 @@ onMounted(async () => {
                 <input v-model="userInfo.phone_number" type="text" placeholder="请输入手机号" disabled />
               </div>
               <div class="form-item">
+                <label>性别</label>
+                <select v-model="userInfo.gender" class="form-select">
+                  <option value="">请选择</option>
+                  <option value="男">男</option>
+                  <option value="女">女</option>
+                </select>
+              </div>
+              <div class="form-item">
+                <label>出生日期</label>
+                <input v-model="userInfo.birth" type="date" placeholder="请选择出生日期" />
+              </div>
+              <div class="form-item">
+                <label>民族</label>
+                <input v-model="userInfo.ethnicity" type="text" placeholder="请输入民族" />
+              </div>
+              <div class="form-item">
+                <label>籍贯</label>
+                <input v-model="userInfo.origin" type="text" placeholder="请输入籍贯" />
+              </div>
+              <div class="form-item">
+                <label>邮箱</label>
+                <input v-model="userInfo.email" type="email" placeholder="请输入邮箱" autocomplete="off" />
+              </div>
+              <div class="form-item">
                 <label>新密码</label>
-                <input v-model="userInfo.password" type="password" placeholder="请输入新密码（不修改请留空）" />
+                <input v-model="userInfo.password" type="password" placeholder="请输入新密码（不修改请留空）" autocomplete="new-password" />
               </div>
               <div v-if="userInfo.password" class="form-item">
                 <label>确认密码</label>
-                <input v-model="userInfo.confirmPassword" type="password" placeholder="请再次输入新密码" />
+                <input v-model="userInfo.confirmPassword" type="password" placeholder="请再次输入新密码" autocomplete="new-password" />
               </div>
               
               <div v-if="responsibleDoctor" class="doctor-section">
@@ -901,7 +1059,11 @@ onMounted(async () => {
                   </div>
                   <div class="doctor-info">
                     <div class="doctor-name">{{ responsibleDoctor.username }}</div>
-                    <div class="doctor-title">{{ responsibleDoctor.title || '医生' }}</div>
+                    <div class="doctor-detail">
+                      <span v-if="responsibleDoctor.department_name">{{ responsibleDoctor.department_name }}</span>
+                      <span v-if="responsibleDoctor.department_name && responsibleDoctor.title"> · </span>
+                      <span>{{ responsibleDoctor.title || '医生' }}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2393,7 +2555,7 @@ onMounted(async () => {
     color: #1a1a1a;
 }
 
-.doctor-title {
+.doctor-detail {
     font-size: 13px;
     color: #666;
     margin-top: 2px;
@@ -2468,6 +2630,24 @@ onMounted(async () => {
     background: #f5f5f5;
     color: #999;
     cursor: not-allowed;
+}
+
+.form-select {
+    width: 100%;
+    max-width: 400px;
+    padding: 12px 16px;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: all 0.2s;
+    outline: none;
+    background: #fff;
+    cursor: pointer;
+}
+
+.form-select:focus {
+    border-color: #1677ff;
+    box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
 }
 
 .save-btn {

@@ -516,20 +516,20 @@ def should_end_conversation(session) -> bool:
 
 
 def normal_chat_stream(session, message: str) -> Generator[dict, None, None]:
-    """正常对话流程 - 混合检索 + LLM 流式回复"""
-    
+    """正常对话流程 - 异步RAG + LLM并行 + 智能融合"""
+
     is_emergency, emergency_keywords = detect_emergency(message)
     detected_symptoms = extract_symptoms(message)
-    
+
     print(f"[DEBUG] 检测到症状: {detected_symptoms}")
-    
+
     if is_emergency:
         print(f"[WARNING] 检测到危急情况: {emergency_keywords}")
         emergency_response = prompts.EMERGENCY_RESPONSE_TEMPLATE.format(
             symptoms="、".join(emergency_keywords)
         )
         session.add_message("ai", emergency_response)
-        
+
         yield {
             "content": emergency_response,
             "is_final": True,
@@ -537,88 +537,129 @@ def normal_chat_stream(session, message: str) -> Generator[dict, None, None]:
             "is_emergency": True
         }
         return
-    
-    retrieved_context, source = hybrid_retrieve(
-        message, 
-        surgery_type=session.surgery_type
-    )
-    
-    system_prompt = prompts.CHAT_SYSTEM_PROMPT.format(
+
+    rag_result_container = {}
+    rag_done_event = threading.Event()
+
+    def async_rag_retrieve():
+        try:
+            retrieved_context, source = hybrid_retrieve(
+                message,
+                surgery_type=session.surgery_type
+            )
+            rag_result_container["context"] = retrieved_context
+            rag_result_container["source"] = source
+        except Exception as e:
+            print(f"[ERROR] 异步RAG检索失败: {e}")
+            rag_result_container["context"] = None
+            rag_result_container["source"] = "error"
+        finally:
+            rag_done_event.set()
+
+    rag_thread = threading.Thread(target=async_rag_retrieve, daemon=True)
+    rag_thread.start()
+
+    system_prompt = prompts.ENHANCED_CHAT_SYSTEM_PROMPT.format(
         surgery_type=session.surgery_type or "未知",
         surgery_date=session.surgery_date
     )
-    
-    if retrieved_context:
-        user_content = prompts.RAG_CONTEXT_TEMPLATE.format(
-            retrieved_context=retrieved_context
-        ) + f"\n\n患者问题：{message}"
-    else:
-        user_content = message
-    
+
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content}
+        {"role": "user", "content": message}
     ]
-    
+
     full_response = ""
     last_error = None
-    
+
     for retry in range(MAX_RETRIES):
         try:
+            model_name = "glm-5" if retry == 0 else "glm-4-flash"
+            print(f"[DEBUG] LLM调用第{retry + 1}次, model={model_name}, max_tokens={config.MAX_TOKENS}")
             response = GLOBAL_CLIENT.chat.completions.create(
-                model="glm-4.7-flash",
+                model=model_name,
                 messages=messages,
                 temperature=config.TEMPERATURE if config.TEMPERATURE > 0 else 0.7,
                 max_tokens=config.MAX_TOKENS,
                 stream=True
             )
-            
+
             for chunk in response:
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                     content = chunk.choices[0].delta.content
                     full_response += content
-                    
+
                     yield {
                         "content": content,
                         "is_final": False,
-                        "reference": retrieved_context[:100] if retrieved_context else ""
+                        "reference": ""
                     }
-            
+
             if full_response:
                 break
             else:
                 print(f"[WARNING] 第{retry + 1}次尝试返回空响应，准备重试...")
-                time.sleep(RETRY_DELAY)
-                
+                if retry < MAX_RETRIES - 1:
+                    time.sleep(RETRY_DELAY * (retry + 1))
+
         except Exception as e:
             last_error = e
-            print(f"[ERROR] 第{retry + 1}次调用失败: {str(e)}")
-            if retry < MAX_RETRIES - 1:
+            error_str = str(e)
+            print(f"[ERROR] 第{retry + 1}次调用失败: {error_str}")
+            if "429" in error_str or "rate" in error_str.lower():
+                print(f"[WARNING] 检测到速率限制，等待更长时间...")
+                time.sleep(RETRY_DELAY * (retry + 1) * 2)
+            elif retry < MAX_RETRIES - 1:
                 time.sleep(RETRY_DELAY)
-    
+
     if not full_response:
-        error_msg = f"AI服务调用失败，已重试{MAX_RETRIES}次"
+        print(f"[ERROR] LLM调用失败，使用备用响应")
+        full_response = "您好，我正在处理您的信息。请问您术后哪里不舒服？"
         if last_error:
-            error_msg += f"，最后错误: {str(last_error)}"
-        print(f"[ERROR] {error_msg}")
-        
-        yield {
-            "content": "[ERROR:SERVICE_BUSY]",
-            "is_final": True,
-            "reference": "",
-            "error": "SERVICE_BUSY",
-            "error_message": error_msg
-        }
-        return
-    
+            print(f"[ERROR] 最后错误: {last_error}")
+
     session.add_message("ai", full_response)
-    
+
     yield {
         "content": "",
         "is_final": True,
         "reference": "",
         "detected_symptoms": detected_symptoms
     }
+
+    rag_thread.join(timeout=2.0)
+
+    if rag_result_container.get("context") and rag_result_container.get("source") == "local_rag":
+        rag_context = rag_result_container["context"]
+        supplement_prompt = f"""基于以下术后护理文档，补充或验证之前的回答：
+
+【术后护理文档】
+{rag_context}
+
+请用1-2句话简洁地补充相关术后护理建议。"""
+
+        try:
+            supplement_response = GLOBAL_CLIENT.chat.completions.create(
+                model="glm-5",
+                messages=[
+                    {"role": "system", "content": "你是一位术后护理专家，请简洁补充。"},
+                    {"role": "user", "content": supplement_prompt}
+                ],
+                temperature=0.0,
+                max_tokens=200,
+                stream=False
+            )
+            supplement_text = supplement_response.choices[0].message.content
+            if supplement_text and len(supplement_text) > 10:
+                print(f"[INFO] RAG补充信息已生成: {supplement_text[:50]}...")
+                session.add_message("ai", supplement_text)
+                yield {
+                    "content": f"\n\n📋 【护理提示】{supplement_text}",
+                    "is_final": True,
+                    "reference": rag_context[:100]
+                }
+        except Exception as e:
+            print(f"[WARNING] RAG补充生成失败: {e}")
 
 
 def end_chat_stream(session) -> Generator[dict, None, None]:
@@ -674,7 +715,7 @@ def generate_medical_report(session) -> dict:
     for retry in range(MAX_RETRIES):
         try:
             response = GLOBAL_CLIENT.chat.completions.create(
-                model="glm-4.7-flash",
+                model="glm-5",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
                 max_tokens=config.MAX_TOKENS,

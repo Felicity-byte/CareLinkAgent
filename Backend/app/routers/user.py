@@ -137,15 +137,23 @@ async def get_user_info(
 
     responsible_doctor_info = None
     if user.responsible_doctor_id:
-        doctor = await Doctor.filter(id=user.responsible_doctor_id).first()
+        doctor = await Doctor.filter(id=user.responsible_doctor_id).prefetch_related("department").first()
         if doctor:
+            department_name = None
+            if doctor.department:
+                department_name = doctor.department.name
+                print(f"[DEBUG] 医生科室: {department_name}, department对象: {doctor.department}")
+            else:
+                print(f"[DEBUG] 医生没有关联科室, department_id: {doctor.department_id}")
             responsible_doctor_info = {
                 "id": doctor.id,
                 "username": doctor.username,
                 "title": doctor.title,
-                "department_id": doctor.department_id,
+                "department_id": str(doctor.department_id) if doctor.department_id else None,
+                "department_name": department_name,
                 "phone_number": doctor.phone_number
             }
+            print(f"[DEBUG] responsible_doctor_info: {responsible_doctor_info}")
 
     surgery_records = await SurgeryRecord.filter(patient_id=target_user_id).all()
     surgery_list = []
@@ -264,6 +272,11 @@ async def update_user_info(
     username: str = Form(None, description="用户名"),
     password: str = Form(None, min_length=6, max_length=72, description="密码，至少6位"),
     avatar_url: str = Form(None, description="头像URL"),
+    gender: str = Form(None, description="性别"),
+    birth: str = Form(None, description="出生日期"),
+    ethnicity: str = Form(None, description="民族"),
+    origin: str = Form(None, description="籍贯"),
+    email: str = Form(None, description="邮箱"),
     current_user: dict = Depends(get_current_user),
     db = Depends(get_db)
 ):
@@ -289,6 +302,25 @@ async def update_user_info(
     
     if avatar_url:
         update_data["avatar_url"] = avatar_url
+    
+    if gender:
+        update_data["gender"] = gender
+    
+    if birth:
+        try:
+            from datetime import datetime as dt
+            update_data["birth"] = dt.strptime(birth, "%Y-%m-%d").date()
+        except ValueError:
+            return error_response(code="10008", msg="出生日期格式错误，应为YYYY-MM-DD")
+    
+    if ethnicity:
+        update_data["ethnicity"] = ethnicity
+    
+    if origin:
+        update_data["origin"] = origin
+    
+    if email:
+        update_data["email"] = email
 
     if not update_data:
         return error_response(code="10006", msg="没有需要更新的内容")
@@ -302,7 +334,12 @@ async def update_user_info(
             "id": user.id,
             "phone_number": user.phone_number,
             "username": user.username,
+            "gender": user.gender,
+            "birth": user.birth.strftime("%Y-%m-%d") if user.birth else None,
+            "ethnicity": user.ethnicity,
+            "origin": user.origin,
             "avatar_url": user.avatar_url,
+            "email": user.email,
             "updated_at": user.updated_at.strftime("%Y-%m-%d %H:%M:%S") if user.updated_at else None
         }
     )

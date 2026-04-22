@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import { useMedicalStore } from '../../stores/medical'
 import { ElMessage } from 'element-plus'
+import request from '../../api/request'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -190,6 +191,160 @@ const getAvailableSlotsForDate = (date, period) => {
     const formattedDate = date instanceof Date ? date.toISOString().split('T')[0] : date
     return medicalStore.getAvailableSlots(formattedDate, period)
 }
+
+const showAddPatientDialog = ref(false)
+const addPatientLoading = ref(false)
+const addPatientForm = ref({
+    phone_number: '',
+    password: '',
+    username: '',
+    gender: '',
+    responsible_doctor_id: '',
+    birth: '',
+    ethnicity: '',
+    origin: ''
+})
+
+const departments = ref([])
+const doctors = ref([])
+const selectedDepartmentId = ref('')
+
+const fetchDepartments = async () => {
+    try {
+        const response = await request.get('/doctor/departments')
+        if (response.base.code === '10000') {
+            departments.value = response.data
+        }
+    } catch (error) {
+        console.error('获取科室列表失败', error)
+    }
+}
+
+const fetchDoctors = async (departmentId = null) => {
+    try {
+        let url = '/doctor/doctors'
+        if (departmentId) {
+            url += `?department_id=${departmentId}`
+        }
+        const response = await request.get(url)
+        if (response.base.code === '10000') {
+            doctors.value = response.data
+        }
+    } catch (error) {
+        console.error('获取医生列表失败', error)
+    }
+}
+
+const handleDepartmentChange = (departmentId) => {
+    selectedDepartmentId.value = departmentId
+    addPatientForm.value.responsible_doctor_id = ''
+    fetchDoctors(departmentId)
+}
+
+const openAddPatientDialog = async () => {
+    addPatientForm.value = {
+        phone_number: '',
+        password: '',
+        username: '',
+        gender: '',
+        responsible_doctor_id: '',
+        birth: '',
+        ethnicity: '',
+        origin: ''
+    }
+    selectedDepartmentId.value = ''
+    showAddPatientDialog.value = true
+    await fetchDepartments()
+    await fetchDoctors()
+}
+
+const submitAddPatient = async () => {
+    if (!addPatientForm.value.phone_number) {
+        ElMessage.warning('请填写手机号')
+        return
+    }
+    if (!/^1[3-9]\d{9}$/.test(addPatientForm.value.phone_number)) {
+        ElMessage.warning('手机号格式不正确')
+        return
+    }
+    if (!addPatientForm.value.password) {
+        ElMessage.warning('请填写密码')
+        return
+    }
+    if (addPatientForm.value.password.length < 6) {
+        ElMessage.warning('密码至少6位')
+        return
+    }
+    if (!addPatientForm.value.username) {
+        ElMessage.warning('请填写姓名')
+        return
+    }
+    if (!addPatientForm.value.gender) {
+        ElMessage.warning('请选择性别')
+        return
+    }
+    if (!addPatientForm.value.responsible_doctor_id) {
+        ElMessage.warning('请选择负责医生')
+        return
+    }
+    
+    addPatientLoading.value = true
+    
+    try {
+        const formData = new FormData()
+        formData.append('phone_number', addPatientForm.value.phone_number)
+        formData.append('password', addPatientForm.value.password)
+        formData.append('username', addPatientForm.value.username)
+        formData.append('gender', addPatientForm.value.gender)
+        formData.append('responsible_doctor_id', addPatientForm.value.responsible_doctor_id)
+        if (addPatientForm.value.birth) {
+            formData.append('birth', addPatientForm.value.birth)
+        }
+        if (addPatientForm.value.ethnicity) {
+            formData.append('ethnicity', addPatientForm.value.ethnicity)
+        }
+        if (addPatientForm.value.origin) {
+            formData.append('origin', addPatientForm.value.origin)
+        }
+        
+        const response = await request.post('/doctor/patient/create', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        })
+        
+        if (response.base.code === '10000') {
+            ElMessage.success(`患者 ${response.data.username} 创建成功，可使用手机号和密码登录患者端`)
+            showAddPatientDialog.value = false
+            
+            medicalStore.addPatient({
+                id: response.data.id,
+                name: response.data.username,
+                gender: response.data.gender,
+                age: response.data.birth ? calculateAge(response.data.birth) : 0,
+                phone: response.data.phone_number,
+                diagnosis: '待诊断',
+                status: 'pending',
+                lastVisit: new Date().toLocaleDateString('zh-CN')
+            })
+        } else {
+            ElMessage.error(response.base.msg || '创建失败')
+        }
+    } catch (error) {
+        ElMessage.error(error.message || '创建失败，请重试')
+    } finally {
+        addPatientLoading.value = false
+    }
+}
+
+const calculateAge = (birthDate) => {
+    const birth = new Date(birthDate)
+    const today = new Date()
+    let age = today.getFullYear() - birth.getFullYear()
+    const monthDiff = today.getMonth() - birth.getMonth()
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+        age--
+    }
+    return age > 0 ? age : 0
+}
 </script>
 
 <template>
@@ -275,6 +430,10 @@ const getAvailableSlotsForDate = (date, period) => {
                 />
               </el-select>
             </div>
+            <el-button type="primary" @click="openAddPatientDialog">
+              <el-icon><Plus /></el-icon>
+              新增患者
+            </el-button>
             <div class="patient-count">
               共 {{ filteredPatients.length }} 位患者
             </div>
@@ -397,10 +556,132 @@ const getAvailableSlotsForDate = (date, period) => {
         <el-button type="primary" @click="submitAppointment">确认预约</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showAddPatientDialog" title="新增患者" width="600px" :close-on-click-modal="false">
+      <div class="form-tips">
+        <el-icon><InfoFilled /></el-icon>
+        <span>带 <span class="required-mark">*</span> 的为必填项，患者可使用手机号和密码登录患者端</span>
+      </div>
+      <el-form :model="addPatientForm" label-width="100px" style="margin-top: 16px;">
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="手机号" required>
+              <el-input v-model="addPatientForm.phone_number" placeholder="请输入11位手机号" maxlength="11">
+                <template #prepend>+86</template>
+              </el-input>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="密码" required>
+              <el-input v-model="addPatientForm.password" type="password" placeholder="至少6位密码" show-password maxlength="20" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="姓名" required>
+              <el-input v-model="addPatientForm.username" placeholder="请输入患者姓名" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="性别" required>
+              <el-radio-group v-model="addPatientForm.gender">
+                <el-radio label="男">男</el-radio>
+                <el-radio label="女">女</el-radio>
+              </el-radio-group>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-divider content-position="left">负责医生</el-divider>
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="科室筛选">
+              <el-select 
+                v-model="selectedDepartmentId" 
+                placeholder="选择科室筛选医生" 
+                clearable 
+                style="width: 100%"
+                @change="handleDepartmentChange"
+              >
+                <el-option
+                  v-for="dept in departments"
+                  :key="dept.id"
+                  :label="dept.name"
+                  :value="dept.id"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="负责医生" required>
+              <el-select 
+                v-model="addPatientForm.responsible_doctor_id" 
+                placeholder="请选择负责医生" 
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="doc in doctors"
+                  :key="doc.id"
+                  :label="`${doc.username}${doc.title ? ' - ' + doc.title : ''}${doc.department_name ? ' (' + doc.department_name + ')' : ''}`"
+                  :value="doc.id"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-divider content-position="left">选填信息</el-divider>
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="出生日期">
+              <el-date-picker
+                v-model="addPatientForm.birth"
+                type="date"
+                placeholder="选择出生日期"
+                format="YYYY-MM-DD"
+                value-format="YYYY-MM-DD"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="民族">
+              <el-input v-model="addPatientForm.ethnicity" placeholder="如：汉族" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="籍贯">
+          <el-input v-model="addPatientForm.origin" placeholder="如：北京市" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddPatientDialog = false">取消</el-button>
+        <el-button type="primary" :loading="addPatientLoading" @click="submitAddPatient">确认添加</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
+.form-tips {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #f0f9ff;
+    border-radius: 8px;
+    color: #0369a1;
+    font-size: 13px;
+}
+
+.form-tips .el-icon {
+    font-size: 16px;
+}
+
+.required-mark {
+    color: #f56c6c;
+    font-weight: bold;
+}
+
 .workspace {
   width: 100%;
   height: 100vh;

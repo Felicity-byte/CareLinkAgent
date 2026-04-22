@@ -236,7 +236,7 @@ class WoundAnalysisService:
                 )
                 
                 response = self.client_4v.chat.completions.create(
-                    model="glm-4.7-flash",
+                    model="glm-5",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.0,
                     max_tokens=2000,
@@ -271,7 +271,7 @@ class WoundAnalysisService:
                 )
                 
                 response = self.client_4v.chat.completions.create(
-                    model="glm-4.7-flash",
+                    model="glm-5",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.0,
                     max_tokens=3000,

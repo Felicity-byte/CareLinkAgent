@@ -11,6 +11,11 @@ router = APIRouter(tags=["伤口分析模块"])
 
 # gRPC 客户端配置（与 server.py 保持一致）
 AI_SERVICE_HOST = os.getenv("AI_SERVICE_HOST", "127.0.0.1:50053")
+GRPC_CONNECT_TIMEOUT = float(os.getenv("AI_GRPC_CONNECT_TIMEOUT", "3"))
+GRPC_DEFAULT_TIMEOUT = float(os.getenv("AI_GRPC_DEFAULT_TIMEOUT", "25"))
+_grpc_stub = None
+_grpc_channel = None
+_medical_ai_pb2 = None
 
 
 class AnalyzeWoundImageRequest(BaseModel):
@@ -25,21 +30,36 @@ class ProcessPatientAnswersRequest(BaseModel):
 
 def get_grpc_stub():
     """获取 gRPC 客户端"""
+    global _grpc_stub, _grpc_channel, _medical_ai_pb2
     try:
+        if _grpc_stub and _grpc_channel and _medical_ai_pb2:
+            return _grpc_stub, _grpc_channel, _medical_ai_pb2
+
         import sys
-        connect_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "GlmAI", "connect")
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        project_root = os.path.dirname(backend_dir)
+        connect_dir = os.path.join(project_root, "GlmAI", "connect")
         if connect_dir not in sys.path:
             sys.path.insert(0, connect_dir)
         
         import medical_ai_pb2
         import medical_ai_pb2_grpc
         
-        channel = grpc.insecure_channel(AI_SERVICE_HOST)
-        stub = medical_ai_pb2_grpc.PostSurgeryFollowUpServiceStub(channel)
-        return stub, channel
+        _grpc_channel = grpc.insecure_channel(
+            AI_SERVICE_HOST,
+            options=[
+                ("grpc.keepalive_time_ms", 30000),
+                ("grpc.keepalive_timeout_ms", 10000),
+                ("grpc.http2.max_pings_without_data", 0),
+            ],
+        )
+        grpc.channel_ready_future(_grpc_channel).result(timeout=GRPC_CONNECT_TIMEOUT)
+        _grpc_stub = medical_ai_pb2_grpc.PostSurgeryFollowUpServiceStub(_grpc_channel)
+        _medical_ai_pb2 = medical_ai_pb2
+        return _grpc_stub, _grpc_channel, _medical_ai_pb2
     except Exception as e:
         print(f"[ERROR] 连接 AI 服务失败: {e}")
-        return None, None
+        return None, None, None
 
 
 @router.post("/analyze")
@@ -49,7 +69,7 @@ async def analyze_wound_image(request: AnalyzeWoundImageRequest):
     接收前端上传的图片Base64数据，调用AI服务分析伤口，
     返回确认问题列表给患者回答。
     """
-    stub, channel = get_grpc_stub()
+    stub, channel, medical_ai_pb2 = get_grpc_stub()
     
     if not stub:
         return error_response(code="50001", msg="AI服务连接失败")
@@ -60,7 +80,8 @@ async def analyze_wound_image(request: AnalyzeWoundImageRequest):
             medical_ai_pb2.AnalyzeWoundImageRequest(
                 session_id=request.session_id,
                 image_base64=request.image_base64
-            )
+            ),
+            timeout=GRPC_DEFAULT_TIMEOUT
         )
         
         if not response.success:
@@ -98,9 +119,6 @@ async def analyze_wound_image(request: AnalyzeWoundImageRequest):
         return error_response(code="50003", msg=f"gRPC调用失败: {e.details()}")
     except Exception as e:
         return error_response(code="50004", msg=f"处理失败: {str(e)}")
-    finally:
-        if channel:
-            channel.close()
 
 
 @router.post("/answers")
@@ -110,7 +128,7 @@ async def process_patient_answers(request: ProcessPatientAnswersRequest):
     接收患者对确认问题的回答，结合之前的图片分析结果，
     生成最终的伤口评估并融合到病历中。
     """
-    stub, channel = get_grpc_stub()
+    stub, channel, medical_ai_pb2 = get_grpc_stub()
     
     if not stub:
         return error_response(code="50001", msg="AI服务连接失败")
@@ -121,7 +139,8 @@ async def process_patient_answers(request: ProcessPatientAnswersRequest):
             medical_ai_pb2.ProcessPatientAnswersRequest(
                 session_id=request.session_id,
                 answers=request.answers
-            )
+            ),
+            timeout=GRPC_DEFAULT_TIMEOUT
         )
         
         if not response.success:
@@ -179,9 +198,6 @@ async def process_patient_answers(request: ProcessPatientAnswersRequest):
         return error_response(code="50006", msg=f"gRPC调用失败: {e.details()}")
     except Exception as e:
         return error_response(code="50007", msg=f"处理失败: {str(e)}")
-    finally:
-        if channel:
-            channel.close()
 
 
 @router.post("/upload")

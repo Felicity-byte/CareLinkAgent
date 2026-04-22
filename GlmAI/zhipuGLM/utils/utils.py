@@ -21,9 +21,9 @@ def get_bge_embedding_model():
     return SentenceTransformerEmbeddings(local_cache)
 
 def get_glm4_llm():
-    """配置GLM-4.7-Flash 模型"""
+    """配置GLM-5 模型"""
     return ChatOpenAI(
-        model="glm-4.7-flash",  
+        model="glm-5",  
         temperature=config.TEMPERATURE,
         openai_api_base=config.GLM_API_BASE,
         openai_api_key=os.environ["GLM_API_KEY"],

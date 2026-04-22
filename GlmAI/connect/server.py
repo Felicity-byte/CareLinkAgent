@@ -61,20 +61,38 @@ class PostSurgeryFollowUpServicer(medical_ai_grpc.PostSurgeryFollowUpServiceServ
         """流式对话"""
         session_id = None
         
-        for request in request_iterator:
-            if not session_id:
-                session_id = request.session_id
-            
-            for response_chunk in ai_service.chat_stream(
-                session_id=session_id,
-                message=request.message,
-                is_end=request.is_end
-            ):
-                yield medical_ai_pb2.ChatResponse(
-                    content=response_chunk["content"],
-                    is_final=response_chunk["is_final"],
-                    reference=response_chunk["reference"]
-                )
+        try:
+            for request in request_iterator:
+                if not session_id:
+                    session_id = request.session_id
+                
+                try:
+                    for response_chunk in ai_service.chat_stream(
+                        session_id=session_id,
+                        message=request.message,
+                        is_end=request.is_end
+                    ):
+                        yield medical_ai_pb2.ChatResponse(
+                            content=response_chunk.get("content", ""),
+                            is_final=response_chunk.get("is_final", False),
+                            reference=response_chunk.get("reference", "")
+                        )
+                except Exception as stream_error:
+                    print(f"[ERROR] chat_stream error for session {session_id}: {stream_error}")
+                    import traceback
+                    traceback.print_exc()
+                    yield medical_ai_pb2.ChatResponse(
+                        content=f"[ERROR] 对话处理出错: {str(stream_error)}",
+                        is_final=True,
+                        reference=""
+                    )
+                    
+        except Exception as e:
+            print(f"[ERROR] Chat method error: {e}")
+            import traceback
+            traceback.print_exc()
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
     
     def EndSession(self, request, context):
         """结束会话，返回病历"""

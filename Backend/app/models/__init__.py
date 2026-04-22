@@ -8,6 +8,7 @@ from app.models.appointment import Appointment
 from app.models.visit_record import VisitRecord
 from app.models.medical_image import MedicalImage
 from app.models.surgery_record import SurgeryRecord
+from app.models.ai_chat_session import AIChatSession, AIChatMessage
 
 __all__ = [
     "User",
@@ -18,5 +19,7 @@ __all__ = [
     "Appointment",
     "VisitRecord",
     "MedicalImage",
-    "SurgeryRecord"
+    "SurgeryRecord",
+    "AIChatSession",
+    "AIChatMessage"
 ]

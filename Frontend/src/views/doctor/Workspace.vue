@@ -1,7 +1,8 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
+import * as echarts from 'echarts'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -46,35 +47,168 @@ const handleResize = () => {
     } else {
         sidebarCollapsed.value = false
     }
+    if (chart) {
+        chart.resize()
+    }
+}
+
+const statsCards = ref([
+    { title: '本周新增患者', value: 28, icon: 'User', color: '#4f8cff', trend: '+12%' },
+    { title: '本周新增病历', value: 45, icon: 'Document', color: '#00b894', trend: '+8%' },
+    { title: '待查看病历', value: 12, icon: 'View', color: '#ff9f43', trend: '' },
+    { title: '高风险预警', value: 5, icon: 'Warning', color: '#ff4757', trend: '' }
+])
+
+const chartData = ref({
+    labels: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+    patients: [5, 8, 6, 10, 7, 3, 4],
+    records: [8, 12, 9, 15, 11, 5, 6]
+})
+
+const quickActions = ref([
+    { label: '新增患者', icon: 'UserFilled', color: '#4f8cff' },
+    { label: '病历管理', icon: 'Document', color: '#00b894' },
+    { label: '快速预约', icon: 'Calendar', color: '#ff9f43' },
+    { label: '通知', icon: 'Bell', color: '#764ba2' }
+])
+
+const pendingTasks = ref([
+    { id: 1, title: '查看张三的复查报告', time: '10分钟前', type: 'urgent' },
+    { id: 2, title: '确认李四的预约申请', time: '30分钟前', type: 'normal' },
+    { id: 3, title: '处理王五的病历审核', time: '1小时前', type: 'normal' }
+])
+
+let chart = null
+const chartRef = ref(null)
+
+const initChart = () => {
+    if (!chartRef.value) return
+    
+    chart = echarts.init(chartRef.value)
+    
+    const option = {
+        tooltip: {
+            trigger: 'axis',
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            borderColor: '#e0e0e0',
+            borderWidth: 1,
+            textStyle: {
+                color: '#333'
+            }
+        },
+        legend: {
+            data: ['新增患者', '新增病历'],
+            top: 0,
+            right: 0,
+            textStyle: {
+                color: '#888',
+                fontSize: 12
+            }
+        },
+        grid: {
+            left: '3%',
+            right: '4%',
+            bottom: '3%',
+            top: '15%',
+            containLabel: true
+        },
+        xAxis: {
+            type: 'category',
+            boundaryGap: false,
+            data: chartData.value.labels,
+            axisLine: {
+                lineStyle: {
+                    color: '#e0e0e0'
+                }
+            },
+            axisLabel: {
+                color: '#888'
+            }
+        },
+        yAxis: {
+            type: 'value',
+            min: 0,
+            max: 20,
+            interval: 5,
+            axisLine: {
+                show: false
+            },
+            axisLabel: {
+                color: '#888'
+            },
+            splitLine: {
+                lineStyle: {
+                    color: '#f0f0f0'
+                }
+            }
+        },
+        series: [
+            {
+                name: '新增患者',
+                type: 'line',
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: 8,
+                lineStyle: {
+                    color: '#4f8cff',
+                    width: 2
+                },
+                itemStyle: {
+                    color: '#4f8cff',
+                    borderColor: '#fff',
+                    borderWidth: 2
+                },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(79, 140, 255, 0.3)' },
+                        { offset: 1, color: 'rgba(79, 140, 255, 0)' }
+                    ])
+                },
+                data: chartData.value.patients
+            },
+            {
+                name: '新增病历',
+                type: 'line',
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: 8,
+                lineStyle: {
+                    color: '#00b894',
+                    width: 2
+                },
+                itemStyle: {
+                    color: '#00b894',
+                    borderColor: '#fff',
+                    borderWidth: 2
+                },
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(0, 184, 148, 0.3)' },
+                        { offset: 1, color: 'rgba(0, 184, 148, 0)' }
+                    ])
+                },
+                data: chartData.value.records
+            }
+        ]
+    }
+    
+    chart.setOption(option)
 }
 
 onMounted(() => {
     window.addEventListener('resize', handleResize)
     handleResize()
+    nextTick(() => {
+        initChart()
+    })
 })
 
 onUnmounted(() => {
     window.removeEventListener('resize', handleResize)
+    if (chart) {
+        chart.dispose()
+    }
 })
-
-const statsCards = ref([
-    { title: '今日问诊', value: 28, icon: 'ChatDotRound', color: '#4f8cff' },
-    { title: '待处理', value: 12, icon: 'Bell', color: '#ff9f43' },
-    { title: '已完成', value: 156, icon: 'CircleCheck', color: '#00b894' }
-])
-
-const recentPatients = ref([
-    { id: 1, name: '张三', time: '10:30', status: '待回复' },
-    { id: 2, name: '李四', time: '09:15', status: '进行中' },
-    { id: 3, name: '王五', time: '昨天', status: '已完成' }
-])
-
-const quickActions = ref([
-    { label: '新建问诊', icon: 'Plus' },
-    { label: '查看报告', icon: 'Document' },
-    { label: '患者管理', icon: 'User' },
-    { label: '数据统计', icon: 'DataAnalysis' }
-])
 </script>
 
 <template>
@@ -143,195 +277,74 @@ const quickActions = ref([
 
       <!-- 内容网格 -->
       <div class="content-grid">
-        <!-- 第一行：两个卡片 -->
+        <!-- 第一行：四个功能区块 -->
         <div class="row row-1">
-          <!-- 左侧卡片：统计+列表 -->
-          <div class="card content-card card-left-top">
-            <div class="card-header">
-              <h3>今日概览</h3>
-              <span class="badge">实时</span>
+          <div 
+            v-for="stat in statsCards" 
+            :key="stat.title"
+            class="card stat-card"
+          >
+            <div class="stat-icon" :style="{ background: stat.color + '20', color: stat.color }">
+              <el-icon><component :is="stat.icon" /></el-icon>
             </div>
-            <div class="stats-row">
-              <div 
-                v-for="stat in statsCards" 
-                :key="stat.title"
-                class="stat-item"
-              >
-                <div class="stat-icon" :style="{ background: stat.color + '20', color: stat.color }">
-                  <el-icon><component :is="stat.icon" /></el-icon>
-                </div>
-                <div class="stat-info">
-                  <div class="stat-value">{{ stat.value }}</div>
-                  <div class="stat-label">{{ stat.title }}</div>
-                </div>
-              </div>
-            </div>
-            <div class="recent-list">
-              <div class="list-title">最近患者</div>
-              <div 
-                v-for="patient in recentPatients" 
-                :key="patient.id"
-                class="list-item"
-              >
-                <div class="item-avatar">
-                  <el-icon><User /></el-icon>
-                </div>
-                <div class="item-info">
-                  <span class="item-name">{{ patient.name }}</span>
-                  <span class="item-time">{{ patient.time }}</span>
-                </div>
-                <span 
-                  class="item-status"
-                  :class="{ 
-                    'status-pending': patient.status === '待回复',
-                    'status-active': patient.status === '进行中',
-                    'status-done': patient.status === '已完成'
-                  }"
-                >{{ patient.status }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 右侧卡片：快捷操作+通知 -->
-          <div class="card content-card card-right-top">
-            <div class="card-header">
-              <h3>快捷操作</h3>
-            </div>
-            <div class="quick-grid">
-              <div 
-                v-for="action in quickActions" 
-                :key="action.label"
-                class="quick-item"
-              >
-                <el-icon><component :is="action.icon" /></el-icon>
-                <span>{{ action.label }}</span>
-              </div>
-            </div>
-            <div class="notice-section">
-              <div class="card-header">
-                <h3>系统通知</h3>
-                <a href="#" class="more-link">查看全部</a>
-              </div>
-              <div class="notice-list">
-                <div class="notice-item">
-                  <div class="notice-dot"></div>
-                  <div class="notice-content">
-                    <p>您有 3 条新的患者消息待处理</p>
-                    <span class="notice-time">5分钟前</span>
-                  </div>
-                </div>
-                <div class="notice-item">
-                  <div class="notice-dot read"></div>
-                  <div class="notice-content">
-                    <p>系统已自动生成本周统计报告</p>
-                    <span class="notice-time">1小时前</span>
-                  </div>
-                </div>
-                <div class="notice-item">
-                  <div class="notice-dot read"></div>
-                  <div class="notice-content">
-                    <p>患者张三已完成术后第7天随访</p>
-                    <span class="notice-time">2小时前</span>
-                  </div>
-                </div>
-              </div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stat.value }}</div>
+              <div class="stat-label">{{ stat.title }}</div>
+              <div v-if="stat.trend" class="stat-trend" :style="{ color: stat.color }">{{ stat.trend }}</div>
             </div>
           </div>
         </div>
 
-        <!-- 第二行：两个卡片 -->
+        <!-- 第二行：折线图 + 快捷功能 -->
         <div class="row row-2">
-          <!-- 左下卡片：日程安排 -->
-          <div class="card content-card card-bottom-left">
+          <!-- 左侧：折线图 -->
+          <div class="card content-card chart-card">
             <div class="card-header">
-              <h3>今日日程</h3>
-              <span class="date-badge">2026-04-07 周二</span>
+              <h3>数据趋势</h3>
             </div>
-            <div class="schedule-list">
-              <div class="schedule-item">
-                <div class="schedule-time">
-                  <span class="time">09:00</span>
-                  <span class="time-end">10:00</span>
-                </div>
-                <div class="schedule-content">
-                  <div class="schedule-title">门诊接诊</div>
-                  <div class="schedule-desc">内科门诊 3号诊室</div>
-                </div>
-                <span class="schedule-status done">已完成</span>
-              </div>
-              <div class="schedule-item">
-                <div class="schedule-time">
-                  <span class="time">14:00</span>
-                  <span class="time-end">15:30</span>
-                </div>
-                <div class="schedule-content">
-                  <div class="schedule-title">AI随访复查</div>
-                  <div class="schedule-desc">5位患者术后随访</div>
-                </div>
-                <span class="schedule-status current">进行中</span>
-              </div>
-              <div class="schedule-item">
-                <div class="schedule-time">
-                  <span class="time">16:00</span>
-                  <span class="time-end">17:00</span>
-                </div>
-                <div class="schedule-content">
-                  <div class="schedule-title">病例讨论会</div>
-                  <div class="schedule-desc">三楼会议室</div>
-                </div>
-                <span class="schedule-status pending">待开始</span>
-              </div>
-            </div>
+            <div ref="chartRef" class="chart-container"></div>
           </div>
 
-          <!-- 右下卡片：数据图表区 -->
-          <div class="card content-card card-bottom-right">
+          <!-- 右侧：快捷功能 -->
+          <div class="card content-card quick-card">
             <div class="card-header">
-              <h3>数据分析</h3>
+              <h3>快捷功能</h3>
             </div>
-            <div class="chart-placeholder">
-              <div class="chart-bars">
-                <div class="bar" style="--h: 60%; --c: #4f8cff;">
-                  <span class="bar-label">周一</span>
-                  <div class="bar-fill"></div>
+            <div class="quick-grid-vertical">
+              <div 
+                v-for="action in quickActions" 
+                :key="action.label"
+                class="quick-item-vertical"
+                :style="{ '--accent-color': action.color }"
+              >
+                <div class="quick-icon-wrapper">
+                  <div class="quick-icon" :style="{ background: action.color + '15', color: action.color }">
+                    <el-icon><component :is="action.icon" /></el-icon>
+                  </div>
                 </div>
-                <div class="bar" style="--h: 80%; --c: #4f8cff;">
-                  <span class="bar-label">周二</span>
-                  <div class="bar-fill"></div>
-                </div>
-                <div class="bar" style="--h: 45%; --c: #4f8cff;">
-                  <span class="bar-label">周三</span>
-                  <div class="bar-fill"></div>
-                </div>
-                <div class="bar" style="--h: 90%; --c: #4f8cff;">
-                  <span class="bar-label">周四</span>
-                  <div class="bar-fill"></div>
-                </div>
-                <div class="bar" style="--h: 70%; --c: #4f8cff;">
-                  <span class="bar-label">周五</span>
-                  <div class="bar-fill"></div>
-                </div>
-                <div class="bar" style="--h: 30%; --c: #e0e0e0;">
-                  <span class="bar-label">周六</span>
-                  <div class="bar-fill"></div>
-                </div>
-                <div class="bar" style="--h: 25%; --c: #e0e0e0;">
-                  <span class="bar-label">周日</span>
-                  <div class="bar-fill"></div>
+                <span class="quick-label">{{ action.label }}</span>
+                <div class="quick-arrow">
+                  <el-icon><ArrowRight /></el-icon>
                 </div>
               </div>
-              <div class="chart-summary">
-                <div class="summary-item">
-                  <span class="summary-label">本周总问诊</span>
-                  <span class="summary-value">186次</span>
-                </div>
-                <div class="summary-item">
-                  <span class="summary-label">较上周</span>
-                  <span class="summary-value up">+12.5%</span>
-                </div>
-                <div class="summary-item">
-                  <span class="summary-label">平均响应</span>
-                  <span class="summary-value">3.2分钟</span>
+            </div>
+            <div class="pending-section">
+              <div class="section-header">
+                <span class="section-title">待办事项</span>
+                <span class="section-badge">{{ pendingTasks.length }}</span>
+              </div>
+              <div class="pending-list">
+                <div 
+                  v-for="task in pendingTasks" 
+                  :key="task.id"
+                  class="pending-item"
+                  :class="{ urgent: task.type === 'urgent' }"
+                >
+                  <div class="pending-dot"></div>
+                  <div class="pending-content">
+                    <span class="pending-title">{{ task.title }}</span>
+                    <span class="pending-time">{{ task.time }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -625,7 +638,8 @@ const quickActions = ref([
 }
 
 .row-1 {
-  flex: 1;
+  flex: none;
+  height: auto;
 }
 
 .row-2 {
@@ -638,6 +652,268 @@ const quickActions = ref([
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+}
+
+.stat-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 24px;
+  min-width: 0;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.stat-card .stat-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.stat-card .stat-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.stat-card .stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #333;
+  line-height: 1.2;
+}
+
+.stat-card .stat-label {
+  font-size: 13px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.stat-trend {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.chart-card {
+  flex: 1;
+  min-width: 0;
+}
+
+.quick-card {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+
+.chart-container {
+  flex: 1;
+  min-height: 200px;
+}
+
+.quick-grid-vertical {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.quick-item-vertical {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: #fff;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+  position: relative;
+  overflow: hidden;
+}
+
+.quick-item-vertical::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, var(--accent-color)08, var(--accent-color)03);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.quick-item-vertical:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  border-color: var(--accent-color)30;
+}
+
+.quick-item-vertical:hover::before {
+  opacity: 1;
+}
+
+.quick-item-vertical:active {
+  transform: translateY(-1px);
+}
+
+.quick-icon-wrapper {
+  position: relative;
+  z-index: 1;
+}
+
+.quick-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  transition: all 0.3s;
+}
+
+.quick-item-vertical:hover .quick-icon {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px var(--accent-color)30;
+}
+
+.quick-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  position: relative;
+  z-index: 1;
+  flex: 1;
+}
+
+.quick-arrow {
+  position: relative;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #f5f7fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #bbb;
+  font-size: 10px;
+  transition: all 0.3s;
+  opacity: 0;
+  transform: translateX(-8px);
+}
+
+.quick-item-vertical:hover .quick-arrow {
+  opacity: 1;
+  transform: translateX(0);
+  background: var(--accent-color)15;
+  color: var(--accent-color);
+}
+
+.pending-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e8e8e8;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.section-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #ff475715;
+  color: #ff4757;
+  font-weight: 600;
+}
+
+.pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pending-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #fafbfc;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pending-item:hover {
+  background: #f0f4f8;
+}
+
+.pending-item.urgent {
+  background: #fff5f5;
+}
+
+.pending-item.urgent:hover {
+  background: #ffebeb;
+}
+
+.pending-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00b894;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+
+.pending-item.urgent .pending-dot {
+  background: #ff4757;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.pending-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pending-title {
+  font-size: 13px;
+  color: #333;
+  line-height: 1.4;
+}
+
+.pending-time {
+  font-size: 11px;
+  color: #999;
 }
 
 .card-left-top,
@@ -685,7 +961,14 @@ const quickActions = ref([
     overflow: visible;
   }
 
-  .row-1,
+  .row-1 {
+    flex: none;
+    overflow: visible;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
   .row-2 {
     flex: none;
     overflow: visible;
@@ -694,6 +977,19 @@ const quickActions = ref([
   .content-card {
     flex: none;
     min-height: 200px;
+  }
+
+  .stat-card {
+    padding: 16px;
+  }
+
+  .stat-card .stat-value {
+    font-size: 24px;
+  }
+
+  .quick-card {
+    max-width: none;
+    min-width: 0;
   }
 
   .welcome-bar {
@@ -706,19 +1002,6 @@ const quickActions = ref([
 
   .date-display {
     display: none;
-  }
-
-  .stats-row {
-    flex-wrap: wrap;
-  }
-
-  .stat-item {
-    flex: 1 1 calc(50% - 6px);
-    min-width: 100px;
-  }
-
-  .quick-grid {
-    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -735,441 +1018,5 @@ const quickActions = ref([
   font-weight: 600;
   color: #333;
   margin: 0;
-}
-
-.badge {
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 4px;
-  background: #52c41a15;
-  color: #52c41a;
-  font-weight: 500;
-}
-
-.date-badge {
-  font-size: 12px;
-  color: #888;
-}
-
-.more-link {
-  font-size: 12px;
-  color: #4f8cff;
-  text-decoration: none;
-}
-
-/* 统计卡片 */
-.stats-row {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.stat-item {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  background: #fafbfc;
-  border-radius: 10px;
-}
-
-.stat-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  flex-shrink: 0;
-}
-
-.stat-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.stat-value {
-  font-size: 22px;
-  font-weight: 700;
-  color: #333;
-  line-height: 1.2;
-}
-
-.stat-label {
-  font-size: 12px;
-  color: #888;
-  margin-top: 2px;
-}
-
-/* 列表样式 */
-.list-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #555;
-  margin-bottom: 10px;
-}
-
-.recent-list {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.recent-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.recent-list::-webkit-scrollbar-thumb {
-  background: #e0e0e0;
-  border-radius: 2px;
-}
-
-.list-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  transition: background 0.2s;
-  cursor: pointer;
-}
-
-.list-item:hover {
-  background: #f8f9fa;
-}
-
-.item-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  background: #e8f4fd;
-  color: #4f8cff;
-  flex-shrink: 0;
-}
-
-.item-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.item-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: #333;
-}
-
-.item-time {
-  font-size: 11px;
-  color: #aaa;
-}
-
-.item-status {
-  font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.status-pending {
-  background: #ff9f4320;
-  color: #ff9f43;
-}
-
-.status-active {
-  background: #4f8cff20;
-  color: #4f8cff;
-}
-
-.status-done {
-  background: #00b89420;
-  color: #00b894;
-}
-
-/* 快捷操作 */
-.quick-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.quick-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 16px 10px;
-  background: #fafbfc;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 12px;
-  color: #555;
-}
-
-.quick-item .el-icon {
-  font-size: 24px;
-  color: #4f8cff;
-}
-
-.quick-item:hover {
-  background: #4f8cff10;
-  transform: translateY(-2px);
-}
-
-/* 通知区域 */
-.notice-section {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.notice-section .card-header {
-  margin-bottom: 10px;
-}
-
-.notice-list {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.notice-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.notice-list::-webkit-scrollbar-thumb {
-  background: #e0e0e0;
-  border-radius: 2px;
-}
-
-.notice-item {
-  display: flex;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid #f0f0f0;
-}
-
-.notice-item:last-child {
-  border-bottom: none;
-}
-
-.notice-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ff4757;
-  margin-top: 5px;
-  flex-shrink: 0;
-}
-
-.notice-dot.read {
-  background: #ddd;
-}
-
-.notice-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.notice-content p {
-  font-size: 13px;
-  color: #444;
-  margin: 0 0 4px 0;
-  line-height: 1.4;
-}
-
-.notice-time {
-  font-size: 11px;
-  color: #bbb;
-}
-
-/* 日程安排 */
-.schedule-list {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.schedule-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.schedule-list::-webkit-scrollbar-thumb {
-  background: #e0e0e0;
-  border-radius: 2px;
-}
-
-.schedule-item {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 0;
-  border-bottom: 1px solid #f5f5f5;
-}
-
-.schedule-item:last-child {
-  border-bottom: none;
-}
-
-.schedule-time {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 48px;
-}
-
-.time {
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-}
-
-.time-end {
-  font-size: 11px;
-  color: #bbb;
-}
-
-.schedule-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.schedule-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
-}
-
-.schedule-desc {
-  font-size: 12px;
-  color: #999;
-  margin-top: 2px;
-}
-
-.schedule-status {
-  font-size: 11px;
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.schedule-status.done {
-  background: #f0fdf4;
-  color: #22c55e;
-}
-
-.schedule-status.current {
-  background: #eff6ff;
-  color: #3b82f6;
-}
-
-.schedule-status.pending {
-  background: #fefce8;
-  color: #eab308;
-}
-
-/* 图表区域 */
-.chart-tabs {
-  display: flex;
-  gap: 4px;
-  background: #f5f7fa;
-  border-radius: 6px;
-  padding: 3px;
-}
-
-.tab {
-  font-size: 12px;
-  padding: 4px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  color: #888;
-  transition: all 0.2s;
-}
-
-.tab.active {
-  background: #fff;
-  color: #4f8cff;
-  font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-}
-
-.chart-placeholder {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding-top: 20px;
-}
-
-.chart-bars {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  height: 160px;
-  padding: 0 10px;
-  gap: 8px;
-}
-
-.bar {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  height: 100%;
-  justify-content: flex-end;
-}
-
-.bar-label {
-  font-size: 11px;
-  color: #888;
-}
-
-.bar-fill {
-  width: 100%;
-  max-width: 40px;
-  height: var(--h);
-  background: var(--c);
-  border-radius: 6px 6px 0 0;
-  transition: height 0.3s ease;
-}
-
-.chart-summary {
-  display: flex;
-  gap: 24px;
-  padding: 14px 16px;
-  background: #fafbfc;
-  border-radius: 10px;
-}
-
-.summary-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.summary-label {
-  font-size: 12px;
-  color: #888;
-}
-
-.summary-value {
-  font-size: 18px;
-  font-weight: 700;
-  color: #333;
-}
-
-.summary-value.up {
-  color: #22c55e;
 }
 </style>
