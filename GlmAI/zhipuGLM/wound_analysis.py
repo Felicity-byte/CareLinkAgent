@@ -9,6 +9,7 @@ from zhipuai import ZhipuAI
 from image_storage import get_image_storage, ImageStorage
 import prompts.prompts as prompts
 import session_manager as session_mgr
+import config.config as config
 
 
 class WoundAnalysisService:
@@ -200,7 +201,7 @@ class WoundAnalysisService:
                 ]
                 
                 response = self.client_4v.chat.completions.create(
-                    model="glm-4v-flash",
+                    model=config.AI_VISION_MODEL,
                     messages=messages,
                     temperature=0.0,
                     max_tokens=2000,
@@ -236,7 +237,7 @@ class WoundAnalysisService:
                 )
                 
                 response = self.client_4v.chat.completions.create(
-                    model="glm-5",
+                    model=config.AI_PRIMARY_MODEL,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.0,
                     max_tokens=2000,

@@ -1,0 +1,20 @@
+{
+  "session_id": "9ba907b5-b36e-4a8d-ad77-68f43b306edc",
+  "patient_id": "test_rag2",
+  "patient_name": "测试",
+  "surgery_date": "",
+  "surgery_type": "阑尾切除手术",
+  "status": "ACTIVE",
+  "conversation": [
+    {
+      "role": "patient",
+      "content": "是的",
+      "timestamp": "2026-04-23T22:01:45.663Z"
+    }
+  ],
+  "created_at": "2026-04-23T22:01:43.643Z",
+  "ended_at": null,
+  "pending_image_analysis": null,
+  "uploaded_images": [],
+  "final_report": null
+}

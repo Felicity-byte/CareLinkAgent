@@ -1,11 +1,10 @@
 <script setup>
 import { ref, onMounted, nextTick, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import request from '../../api/request'
 import { PictureFilled, Loading, Setting, SwitchButton, Document, Close, Bell } from '@element-plus/icons-vue'
 
-const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
@@ -72,67 +71,16 @@ const fileInputRef = ref(null)
 const analyzingImage = ref(false)
 const pendingQuestions = ref([])
 const waitingForAnswers = ref(false)
+const currentQuestionIndex = ref(0)
+const woundAnswers = ref({})
 const currentSessionId = ref(`sess_${Date.now()}`)
 
 // AI导诊会话
 const aiSessionId = ref('')
 
-const historyList = ref([])
-
 const notificationCount = computed(() => {
     return notifications.value.filter(n => !n.read).length
 })
-
-const todayHistory = computed(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    return historyList.value.filter(item => item.timestamp >= today.getTime())
-})
-
-const weekHistory = computed(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const weekAgo = today.getTime() - 7 * 86400000
-    return historyList.value.filter(item => item.timestamp >= weekAgo && item.timestamp < today.getTime())
-})
-
-const olderHistory = computed(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const weekAgo = today.getTime() - 7 * 86400000
-    return historyList.value.filter(item => item.timestamp < weekAgo)
-})
-
-const fetchHistoryList = async () => {
-    try {
-        const res = await request.get('/ai/sessions')
-        const sessions = res.data.sessions || []
-        historyList.value = sessions.map(s => ({
-            id: s.id,
-            title: s.title || 'AI问诊',
-            time: s.updated_at ? formatHistoryTime(s.updated_at) : '',
-            timestamp: s.updated_at ? new Date(s.updated_at).getTime() : 0
-        }))
-    } catch (err) {
-        console.error('获取历史记录失败', err)
-    }
-}
-
-const formatHistoryTime = (dateStr) => {
-    if (!dateStr) return ''
-    const date = new Date(dateStr)
-    const now = new Date()
-    const diff = now - date
-    const minutes = Math.floor(diff / (1000 * 60))
-    const hours = Math.floor(diff / (1000 * 60 * 60))
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-    
-    if (minutes < 60) return `今天 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
-    if (hours < 24) return `今天 ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
-    if (days === 1) return '昨天'
-    if (days < 7) return `${days}天前`
-    return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
-}
 
 const scrollToBottom = async () => {
     await nextTick()
@@ -289,22 +237,22 @@ const handleImageUpload = async (event) => {
         const data = response.data
 
         if (data.need_confirmation && data.image_valid) {
-            // 显示图片预览和确认问题
+            // 逐个提问，每次只问一个问题
             pendingQuestions.value = data.questions || []
+            currentQuestionIndex.value = 0
+            woundAnswers.value = {}
             waitingForAnswers.value = true
-            
+
             let questionText = `📷 图片已接收并完成初步分析\n\n`
             questionText += `**初步发现：**\n`
             if (data.preliminary_findings?.suspected_body_part) {
                 questionText += `- 可能部位：${data.preliminary_findings.suspected_body_part}\n`
                 questionText += `- 置信度：${data.preliminary_findings.suspected_body_part_confidence}\n`
             }
-            
-            questionText += `\n**请回答以下问题以帮助我更准确地评估：**\n\n`
-            data.questions.forEach((q, i) => {
-                questionText += `${i + 1}. ${q.question}\n`
-            })
-            questionText += `\n请直接输入您的回答即可。`
+
+            questionText += `\n**问题（1/${pendingQuestions.value.length}）：**\n`
+            questionText += `${pendingQuestions.value[0].question}\n`
+            questionText += `\n请输入您的回答。`
 
             addMessage(questionText, false)
         } else if (!data.image_valid) {
@@ -323,54 +271,63 @@ const handleImageUpload = async (event) => {
 const handlePatientAnswer = async (answer) => {
     inputText.value = ''
     addMessage(answer, true)
+
+    // 保存当前问题的答案
+    woundAnswers.value[String(currentQuestionIndex.value)] = answer
+    currentQuestionIndex.value++
+
+    // 还有更多问题 → 继续逐个追问
+    if (currentQuestionIndex.value < pendingQuestions.value.length) {
+        const q = pendingQuestions.value[currentQuestionIndex.value]
+        const questionText = `**问题（${currentQuestionIndex.value + 1}/${pendingQuestions.value.length}）：**\n${q.question}\n\n请输入您的回答。`
+        addMessage(questionText, false)
+        return
+    }
+
+    // 所有问题已答完 → 提交给后端
     loading.value = true
-
     try {
-        // 构建答案对象
-        const answers = {}
-        pendingQuestions.value.forEach((q, i) => {
-            answers[String(i)] = answer
-        })
-
         const response = await request.post('/wound/answers', {
             session_id: currentSessionId.value,
-            answers: answers
+            answers: woundAnswers.value
         })
 
         const data = response.data
 
         let resultText = '📋 **伤口评估报告**\n\n'
-        
+
         if (data.wound_assessment) {
             const wa = data.wound_assessment
             resultText += `**确认部位：** ${wa.confirmed_body_part}\n\n`
-            
+
             if (wa.wound_assessment) {
                 resultText += `**外观描述：** ${wa.wound_assessment.appearance}\n`
                 resultText += `**渗液情况：** ${wa.wound_assessment.exudate}\n`
                 resultText += `**周围皮肤：** ${wa.wound_assessment.surrounding_skin}\n`
             }
-            
+
             resultText += `\n**愈合状态：** ${wa.healing_status}\n`
-            
+
             if (wa.risk_alerts?.length > 0) {
                 resultText += `\n⚠️ **风险提示：**\n`
                 wa.risk_alerts.forEach(alert => {
                     resultText += `- ${alert}\n`
                 })
             }
-            
+
             if (wa.recommendation) {
                 resultText += `\n💡 **建议措施：** ${wa.recommendation}\n`
             }
         }
 
         addMessage(resultText, false)
-        
+
         // 重置状态
         waitingForAnswers.value = false
         pendingQuestions.value = []
-        
+        woundAnswers.value = {}
+        currentQuestionIndex.value = 0
+
     } catch (error) {
         console.error('处理回答失败:', error)
         addMessage('处理失败，请稍后重试', false)
@@ -387,22 +344,21 @@ const handleKeyDown = (e) => {
 }
 
 const startNewChat = async () => {
-    if (aiSessionId.value) {
-        try {
-            await request.post('/ai/end-session', {
-                session_id: aiSessionId.value
-            })
-        } catch (err) {
-            console.error('结束AI会话失败', err)
-        }
+    if (loading.value) return
+
+    const oldSessionId = aiSessionId.value
+    if (oldSessionId) {
+        request.post('/ai/end-session', { session_id: oldSessionId }).catch(() => {})
     }
-    
+
+    loading.value = true
     messages.value = []
     chatTitle.value = 'AI 智能导诊'
     aiSessionId.value = ''
-    
+
     await createAISession()
-    fetchHistoryList()
+
+    loading.value = false
 }
 
 const openSettings = async () => {
@@ -535,23 +491,6 @@ const toggleSidebar = () => {
     sidebarCollapsed.value = !sidebarCollapsed.value
 }
 
-const deleteHistory = async (id) => {
-    if (!confirm('确定要删除这条对话记录吗？')) return
-    
-    try {
-        await request.delete(`/ai/sessions/${id}`)
-        historyList.value = historyList.value.filter(item => item.id !== id)
-        if (aiSessionId.value === id) {
-            messages.value = []
-            aiSessionId.value = ''
-            await createAISession()
-        }
-    } catch (err) {
-        console.error('删除失败', err)
-        alert('删除失败')
-    }
-}
-
 const goToProfile = () => {
     showProfileMenu.value = !showProfileMenu.value
 }
@@ -622,40 +561,8 @@ const logout = () => {
     router.push({ name: 'login' })
 }
 
-const loadHistorySession = async (sessionId) => {
-    try {
-        loading.value = true
-        const res = await request.get(`/ai/sessions/${sessionId}`)
-        const data = res.data
-        
-        aiSessionId.value = sessionId
-        chatTitle.value = data.session?.title || 'AI问诊'
-        
-        messages.value = data.messages.map(msg => ({
-            id: msg.id,
-            content: msg.content,
-            isUser: msg.role === 'user',
-            time: msg.time
-        }))
-        
-        scrollToBottom()
-    } catch (err) {
-        console.error('加载历史会话失败', err)
-        alert('加载会话失败，请重试')
-    } finally {
-        loading.value = false
-    }
-}
-
 onMounted(async () => {
-    fetchHistoryList()
-    
-    const sessionId = route.query.session_id
-    if (sessionId) {
-        await loadHistorySession(sessionId)
-    } else {
-        await createAISession()
-    }
+    await createAISession()
     
     isMobile.value = window.innerWidth <= 768
     sidebarCollapsed.value = isMobile.value
@@ -691,64 +598,7 @@ onMounted(async () => {
           <span v-if="!sidebarCollapsed">开启新导诊</span>
         </button>
       </div>
-      
-      <div class="sidebar-history" v-if="!sidebarCollapsed">
-        <div class="history-list" v-if="todayHistory.length > 0">
-          <div class="history-group-title">今天</div>
-          <div
-            v-for="item in todayHistory"
-            :key="item.id"
-            class="history-item"
-            @click="loadHistorySession(item.id)"
-          >
-            <div class="history-info">
-              <div class="history-name">{{ item.title }}</div>
-              <div class="history-time">{{ item.time }}</div>
-            </div>
-            <button class="delete-btn" @click.stop="deleteHistory(item.id)">
-              <el-icon><Delete /></el-icon>
-            </button>
-          </div>
-        </div>
-        <div class="history-list" v-if="weekHistory.length > 0">
-          <div class="history-group-title">七天内</div>
-          <div
-            v-for="item in weekHistory"
-            :key="item.id"
-            class="history-item"
-            @click="loadHistorySession(item.id)"
-          >
-            <div class="history-info">
-              <div class="history-name">{{ item.title }}</div>
-              <div class="history-time">{{ item.time }}</div>
-            </div>
-            <button class="delete-btn" @click.stop="deleteHistory(item.id)">
-              <el-icon><Delete /></el-icon>
-            </button>
-          </div>
-        </div>
-        <div class="history-list" v-if="olderHistory.length > 0">
-          <div class="history-group-title">更早</div>
-          <div
-            v-for="item in olderHistory"
-            :key="item.id"
-            class="history-item"
-            @click="loadHistorySession(item.id)"
-          >
-            <div class="history-info">
-              <div class="history-name">{{ item.title }}</div>
-              <div class="history-time">{{ item.time }}</div>
-            </div>
-            <button class="delete-btn" @click.stop="deleteHistory(item.id)">
-              <el-icon><Delete /></el-icon>
-            </button>
-          </div>
-        </div>
-        <div class="history-empty" v-if="historyList.length === 0">
-          暂无历史对话
-        </div>
-      </div>
-      
+
       <div class="sidebar-bottom">
         <button class="appointment-btn" v-if="!sidebarCollapsed" @click="goToAppointment">
           <el-icon class="appointment-icon"><Calendar /></el-icon>
@@ -852,7 +702,7 @@ onMounted(async () => {
             class="msg-row"
             :class="{ 'user-row': msg.isUser }"
           >
-            <template v-if="!msg.isUser">
+            <template v-if="!msg.isUser && msg.content">
               <div class="ai-message-wrapper">
                 <div class="ai-header">
                   <span class="ai-label">AI智能导诊助手</span>
@@ -863,7 +713,7 @@ onMounted(async () => {
                 <span class="msg-time">{{ msg.time }}</span>
               </div>
             </template>
-            <template v-else>
+            <template v-else-if="msg.isUser">
               <div class="msg-avatar user-msg-avatar">
                 <img v-if="authStore.user?.avatar_url" :src="authStore.user.avatar_url" alt="头像" class="user-avatar-img" />
                 <el-icon v-else class="user-avatar-icon"><UserFilled /></el-icon>
@@ -877,7 +727,7 @@ onMounted(async () => {
             </template>
           </div>
           
-          <div v-if="loading" class="msg-row ai-row">
+          <div v-if="loading && messages[messages.length-1]?.content === ''" class="msg-row ai-row">
             <div class="ai-message-wrapper">
               <div class="ai-header">
                 <span class="ai-label">AI智能导诊助手</span>
@@ -1395,122 +1245,6 @@ onMounted(async () => {
     background: #fff;
     transform: translateY(-5px);
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-
-.sidebar-history {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0 12px;
-}
-
-.dark-mode .sidebar-history { background: rgba(32, 33, 35, 0.15); }
-.light-mode .sidebar-history { background: rgba(255, 255, 255, 0.08); }
-
-.history-title {
-    font-size: 12px;
-    font-weight: 500;
-    padding: 8px 4px;
-    margin-bottom: 4px;
-}
-
-.history-group-title {
-    font-size: 12px;
-    font-weight: 600;
-    padding: 8px 4px 4px;
-    color: #999;
-}
-
-.history-empty {
-    font-size: 13px;
-    color: #aaa;
-    text-align: center;
-    padding: 20px 0;
-}
-
-.dark-mode .history-title { color: #666; }
-.light-mode .history-title { color: #999; }
-
-.history-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.history-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border-radius: 25px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.dark-mode .history-item:hover { background: rgba(255,255,255,0.05); }
-.light-mode .history-item:hover { background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-
-.history-icon {
-    font-size: 18px;
-}
-
-.dark-mode .history-icon { color: #666; }
-.light-mode .history-icon { color: #aaa; }
-
-.history-info { flex: 1; min-width: 0; }
-
-.history-name {
-    font-size: 15px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.dark-mode .history-name { color: #ccc; }
-.light-mode .history-name { color: #333; }
-
-.history-time {
-    font-size: 12px;
-    margin-top: 2px;
-}
-
-.dark-mode .history-time { color: #555; }
-.light-mode .history-time { color: #aaa; }
-
-.delete-btn {
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
-    opacity: 0;
-    transition: all 0.2s;
-    flex-shrink: 0;
-}
-
-.history-item:hover .delete-btn {
-    opacity: 1;
-}
-
-.dark-mode .delete-btn {
-    background: transparent;
-    color: #666;
-}
-.dark-mode .delete-btn:hover {
-    background: rgba(255,100,100,0.15);
-    color: #ff6b6b;
-}
-
-.light-mode .delete-btn {
-    background: transparent;
-    color: #aaa;
-}
-.light-mode .delete-btn:hover {
-    background: rgba(255,100,100,0.1);
-    color: #ff4757;
 }
 
 .sidebar-bottom {

@@ -1,0 +1,30 @@
+{
+  "session_id": "e2edfa7c-caa1-407c-aaa0-f975f23c8a01",
+  "patient_id": "final_test",
+  "patient_name": "测试",
+  "surgery_date": "",
+  "surgery_type": "阑尾切除手术",
+  "status": "ACTIVE",
+  "conversation": [
+    {
+      "role": "patient",
+      "content": "我做了阑尾炎手术，现在感觉伤口疼",
+      "timestamp": "2026-04-23T21:34:44.184Z"
+    },
+    {
+      "role": "ai",
+      "content": "我了解到您做的是【阑尾切除手术】手术，对吗？\n请确认一下。",
+      "timestamp": "2026-04-23T21:34:44.185Z"
+    },
+    {
+      "role": "patient",
+      "content": "是的",
+      "timestamp": "2026-04-23T21:34:46.197Z"
+    }
+  ],
+  "created_at": "2026-04-23T21:34:42.168Z",
+  "ended_at": null,
+  "pending_image_analysis": null,
+  "uploaded_images": [],
+  "final_report": null
+}

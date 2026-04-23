@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from tortoise.exceptions import DoesNotExist
 from app.database_tortoise import get_db
 from app.models.department import Department
-from app.utils import success_response, error_response
+from app.utils import success_response, error_response, get_current_doctor
 
 router = APIRouter(tags=["科室模块"])
 
@@ -55,6 +55,7 @@ async def create_department(
     name: str,
     code: str,
     description: str = None,
+    current_doctor: dict = Depends(get_current_doctor),
     db = Depends(get_db)
 ):
     """创建科室"""

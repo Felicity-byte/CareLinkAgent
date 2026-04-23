@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
 
     # 调试模式
-    DEBUG: bool = True
+    DEBUG: bool = False
 
     # JWT配置
     SECRET_KEY: str
@@ -32,6 +32,23 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+
+    def model_post_init(self, __context):
+        """启动时校验关键配置"""
+        warnings = []
+        if self.DATABASE_URL in (None, "mysql+pymysql://root:your_password@localhost:3306/medimeow_db"):
+            warnings.append("DATABASE_URL 未修改，使用了默认值")
+        if self.SECRET_KEY in (None, "", "your-secret-key-here-change-in-production", "change-this-to-a-random-secret-key"):
+            warnings.append("SECRET_KEY 未修改，使用了默认/弱密钥")
+        if not self.GLM_API_KEY:
+            warnings.append("GLM_API_KEY 未配置")
+        if warnings:
+            import sys
+            for w in warnings:
+                print(f"[配置警告] {w}")
+            if not self.DEBUG:
+                print("[严重] 生产环境存在未配置的安全项，请检查 .env 文件")
+                sys.exit(1)
 
     def get_origins_list(self) -> List[str]:
         """获取CORS允许的源列表"""

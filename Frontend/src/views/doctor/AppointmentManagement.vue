@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import { useMedicalStore } from '../../stores/medical'
 import { ElMessage } from 'element-plus'
+import request from '../../api/request'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -27,24 +28,99 @@ const tabs = [
     { key: 'slots', label: '号源管理', icon: 'DataLine' }
 ]
 
-const appointmentFilter = ref('today')
+const appointments = ref([])
+const loading = ref(false)
+const inviteDialogVisible = ref(false)
+const inviteForm = ref({
+    patientId: '',
+    date: '',
+    time: '',
+    reason: ''
+})
+const patients = ref([])
 
-const appointments = computed(() => medicalStore.appointments)
+const appointmentFilter = ref('today')
 
 const filteredAppointments = computed(() => {
     const today = new Date().toISOString().split('T')[0]
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0]
-    
+
     let result = appointments.value
-    
+
     if (appointmentFilter.value === 'today') {
-        result = result.filter(a => a.appointmentDate === today || a.appointmentDate === '2026-04-09')
+        result = result.filter(a => a.date === today)
     } else if (appointmentFilter.value === 'tomorrow') {
-        result = result.filter(a => a.appointmentDate === tomorrow || a.appointmentDate === '2026-04-10')
+        const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0]
+        result = result.filter(a => a.date === tomorrow)
     }
-    
+
     return result
 })
+
+const fetchAppointments = async () => {
+    loading.value = true
+    try {
+        const res = await request.get('/appointments/doctor/list')
+        appointments.value = res.data.appointments || []
+    } catch (err) {
+        console.error('获取预约列表失败', err)
+    } finally {
+        loading.value = false
+    }
+}
+
+const updateStatus = async (id, status) => {
+    try {
+        const params = new URLSearchParams()
+        params.append('status', status)
+        await request.put(`/appointments/${id}/status`, params)
+        ElMessage.success('操作成功')
+        await fetchAppointments()
+    } catch (err) {
+        ElMessage.error('操作失败')
+    }
+}
+
+const confirmAppointment = (appointment) => {
+    updateStatus(appointment.id, 'confirmed')
+}
+
+const cancelAppointment = (appointment) => {
+    updateStatus(appointment.id, 'cancelled')
+}
+
+const markCompleted = (appointment) => {
+    updateStatus(appointment.id, 'completed')
+}
+
+const openInviteDialog = () => {
+    inviteForm.value = {
+        patientId: '',
+        date: '',
+        time: '',
+        reason: ''
+    }
+    inviteDialogVisible.value = true
+}
+
+const submitInvite = async () => {
+    if (!inviteForm.value.patientId || !inviteForm.value.date || !inviteForm.value.time) {
+        ElMessage.warning('请填写完整信息')
+        return
+    }
+    try {
+        const params = new URLSearchParams()
+        params.append('patient_id', inviteForm.value.patientId)
+        params.append('appointment_date', inviteForm.value.date)
+        params.append('appointment_time', inviteForm.value.time)
+        params.append('reason', inviteForm.value.reason || '')
+        await request.post('/appointments/doctor/invite', params)
+        ElMessage.success('邀请已发送')
+        inviteDialogVisible.value = false
+        await fetchAppointments()
+    } catch (err) {
+        ElMessage.error('发送邀请失败')
+    }
+}
 
 const scheduleSettings = ref({
     morningStart: '08:00',
@@ -185,11 +261,11 @@ const examinationOptions = [
 const openMedicalRecordDialog = (appointment) => {
     currentAppointment.value = appointment
     medicalRecordForm.value = {
-        patientId: appointment.id,
-        patientName: appointment.patientName,
+        patientId: appointment.patient_id,
+        patientName: appointment.patient_name,
         patientAge: '',
         patientGender: '',
-        currentSymptoms: appointment.symptoms,
+        currentSymptoms: appointment.reason || '',
         preliminaryDiagnosis: '',
         examinations: [],
         prescription: [],
@@ -233,9 +309,20 @@ const saveMedicalRecord = () => {
     showMedicalRecordDialog.value = false
 }
 
+const fetchPatients = async () => {
+    try {
+        const res = await request.get('/doctor/patients')
+        patients.value = res.data?.patients || res.data || []
+    } catch (err) {
+        console.error('获取患者列表失败', err)
+    }
+}
+
 onMounted(() => {
     window.addEventListener('resize', handleResize)
     handleResize()
+    fetchAppointments()
+    fetchPatients()
 })
 
 onUnmounted(() => {
@@ -317,6 +404,9 @@ onUnmounted(() => {
                 <el-radio-button label="tomorrow">明日预约</el-radio-button>
                 <el-radio-button label="all">全部预约</el-radio-button>
               </el-radio-group>
+              <el-button type="primary" @click="openInviteDialog">
+                <el-icon><Plus /></el-icon> 创建邀请
+              </el-button>
             </div>
             <div class="stats-info">
               <span class="stat-item">待确认: {{ appointments.filter(a => a.status === 'pending').length }}</span>
@@ -325,24 +415,30 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <el-table :data="filteredAppointments" style="width: 100%">
-            <el-table-column prop="patientName" label="患者姓名" width="100" align="center">
+          <el-table v-loading="loading" :data="filteredAppointments" style="width: 100%">
+            <el-table-column prop="patient_name" label="患者姓名" width="100" align="center">
               <template #default="{ row }">
-                <span class="patient-name">{{ row.patientName }}</span>
+                <span class="patient-name">{{ row.patient_name }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="patientPhone" label="联系电话" width="120" align="center" />
-            <el-table-column prop="appointmentDate" label="预约日期" width="110" align="center" />
-            <el-table-column prop="appointmentTime" label="预约时段" width="110" align="center">
+            <el-table-column label="联系电话" width="120" align="center">
               <template #default="{ row }">
-                <el-tag size="small" :type="row.period === '上午' ? 'primary' : 'success'">
-                  {{ row.appointmentTime }}
-                </el-tag>
+                {{ row.patient_phone || '-' }}
               </template>
             </el-table-column>
-            <el-table-column prop="symptoms" label="症状描述" min-width="180">
+            <el-table-column label="预约日期" width="110" align="center">
               <template #default="{ row }">
-                <span class="symptoms-text">{{ row.symptoms }}</span>
+                {{ row.date }}
+              </template>
+            </el-table-column>
+            <el-table-column label="预约时段" width="110" align="center">
+              <template #default="{ row }">
+                <el-tag size="small">{{ row.time }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="reason" label="预约原因" min-width="180">
+              <template #default="{ row }">
+                <span class="symptoms-text">{{ row.reason || '-' }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="status" label="状态" width="90" align="center">
@@ -694,6 +790,61 @@ onUnmounted(() => {
       <template #footer>
         <el-button @click="showMedicalRecordDialog = false">取消</el-button>
         <el-button type="primary" @click="saveMedicalRecord">保存病历</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="inviteDialogVisible"
+      title="创建预约邀请"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="inviteForm" label-width="80px">
+        <el-form-item label="患者" required>
+          <el-select v-model="inviteForm.patientId" placeholder="请选择患者" style="width: 100%" filterable>
+            <el-option
+              v-for="p in patients"
+              :key="p.id"
+              :label="p.username || p.name"
+              :value="p.id"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="日期" required>
+          <el-date-picker
+            v-model="inviteForm.date"
+            type="date"
+            placeholder="选择日期"
+            format="YYYY-MM-DD"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+
+        <el-form-item label="时间" required>
+          <el-select v-model="inviteForm.time" placeholder="请选择时间" style="width: 100%">
+            <el-option label="09:00" value="09:00" />
+            <el-option label="09:30" value="09:30" />
+            <el-option label="10:00" value="10:00" />
+            <el-option label="10:30" value="10:30" />
+            <el-option label="11:00" value="11:00" />
+            <el-option label="14:00" value="14:00" />
+            <el-option label="14:30" value="14:30" />
+            <el-option label="15:00" value="15:00" />
+            <el-option label="15:30" value="15:30" />
+            <el-option label="16:00" value="16:00" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="邀请原因">
+          <el-input v-model="inviteForm.reason" type="textarea" placeholder="请输入邀请原因（选填）" rows="3" />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="inviteDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitInvite">发送邀请</el-button>
       </template>
     </el-dialog>
   </div>

@@ -6,84 +6,45 @@ import request from '../../api/request'
 const router = useRouter()
 const appointments = ref([])
 const doctorInvitations = ref([])
+const departments = ref([])
+const doctors = ref([])
 const loading = ref(true)
 const dialogVisible = ref(false)
 const formLoading = ref(false)
 const activeTab = ref('patient')
 
 const form = ref({
-    department: '',
-    doctor: '',
+    doctorId: '',
+    doctorName: '',
     date: '',
     time: '',
     reason: ''
 })
 
-const departments = ['内科', '外科', '心血管内科', '神经内科', '眼科', '儿科', '妇产科', '皮肤科']
-const doctors = {
-    '内科': ['张医生', '王医生'],
-    '外科': ['李医生', '赵医生'],
-    '心血管内科': ['刘医生', '陈医生'],
-    '神经内科': ['孙医生', '周医生'],
-    '眼科': ['吴医生', '郑医生'],
-    '儿科': ['钱医生', '冯医生'],
-    '妇产科': ['杨医生', '朱医生'],
-    '皮肤科': ['秦医生', '许医生']
-}
-
 const fetchAppointments = async () => {
     loading.value = true
     try {
         const res = await request.get('/appointments')
-        appointments.value = res.data.appointments || []
+        const all = res.data.appointments || []
+        appointments.value = all.filter(a => a.appointment_type === 'patient')
+        doctorInvitations.value = all.filter(a => a.appointment_type === 'doctor')
     } catch (err) {
-        console.error('Fetch appointments failed', err)
-        appointments.value = [
-            {
-                id: '1',
-                department: '内科',
-                doctor: '张医生',
-                date: '2024-01-20',
-                time: '09:30',
-                status: 'pending',
-                source: 'patient',
-                reason: '头痛、发热症状复查'
-            },
-            {
-                id: '2',
-                department: '外科',
-                doctor: '李医生',
-                date: '2024-01-22',
-                time: '14:00',
-                status: 'pending',
-                source: 'patient',
-                reason: '术后伤口复查'
-            }
-        ]
-        doctorInvitations.value = [
-            {
-                id: '3',
-                department: '心血管内科',
-                doctor: '王医生',
-                date: '2024-01-25',
-                time: '10:30',
-                status: 'pending',
-                source: 'doctor',
-                reason: '高血压随访复查'
-            },
-            {
-                id: '4',
-                department: '眼科',
-                doctor: '赵医生',
-                date: '2024-01-18',
-                time: '15:00',
-                status: 'pending',
-                source: 'doctor',
-                reason: '视力复查，请按时就诊'
-            }
-        ]
+        console.error('获取预约失败', err)
     } finally {
         loading.value = false
+    }
+}
+
+const fetchDepartmentsAndDoctors = async () => {
+    try {
+        const [deptRes, docRes] = await Promise.all([
+            request.get('/department/list'),
+            request.get('/appointments/doctors')
+        ])
+        departments.value = deptRes.data || []
+        doctors.value = docRes.data || []
+    } catch (err) {
+        console.error('获取科室/医生列表失败', err)
     }
 }
 
@@ -93,8 +54,8 @@ const goBack = () => {
 
 const openNewAppointmentDialog = () => {
     form.value = {
-        department: '',
-        doctor: '',
+        doctorId: '',
+        doctorName: '',
         date: '',
         time: '',
         reason: ''
@@ -102,27 +63,30 @@ const openNewAppointmentDialog = () => {
     dialogVisible.value = true
 }
 
+const onDoctorChange = (doctorId) => {
+    const doc = doctors.value.find(d => d.id === doctorId)
+    form.value.doctorName = doc ? doc.name : ''
+}
+
 const handleCreate = async () => {
-    if (!form.value.department || !form.value.doctor || !form.value.date || !form.value.time) {
-        alert('请填写完整信息')
+    if (!form.value.doctorId || !form.value.date || !form.value.time) {
+        alert('请选择医生、日期和时间')
         return
     }
-    
+
     formLoading.value = true
     try {
-        const newAppointment = {
-            id: Date.now().toString(),
-            department: form.value.department,
-            doctor: form.value.doctor,
-            date: form.value.date,
-            time: form.value.time,
-            status: 'pending',
-            source: 'patient',
-            reason: form.value.reason
-        }
-        appointments.value.unshift(newAppointment)
+        const params = new URLSearchParams()
+        params.append('appointment_type', 'patient')
+        params.append('appointment_date', form.value.date)
+        params.append('appointment_time', form.value.time)
+        params.append('reason', form.value.reason || '')
+        params.append('doctor_id', form.value.doctorId)
+
+        await request.post('/appointments', params)
         dialogVisible.value = false
         alert('预约成功')
+        await fetchAppointments()
     } catch (err) {
         console.error('创建预约失败', err)
         alert('创建预约失败，请重试')
@@ -132,21 +96,30 @@ const handleCreate = async () => {
 }
 
 const confirmInvitation = async (id) => {
-    const invitation = doctorInvitations.value.find(inv => inv.id === id)
-    if (invitation) {
-        invitation.status = 'confirmed'
-        appointments.value.unshift({ ...invitation, status: 'pending' })
+    try {
+        const params = new URLSearchParams()
+        params.append('status', 'confirmed')
+        await request.put(`/appointments/${id}/status`, params)
+        await fetchAppointments()
+    } catch (err) {
+        console.error('确认预约失败', err)
+        alert('操作失败')
     }
 }
 
 const cancelAppointment = async (id) => {
-    if (confirm('确定要取消这个预约吗？')) {
-        appointments.value = appointments.value.filter(a => a.id !== id)
-        doctorInvitations.value = doctorInvitations.value.filter(inv => inv.id !== id)
+    if (!confirm('确定要取消这个预约吗？')) return
+    try {
+        await request.delete(`/appointments/${id}`)
+        await fetchAppointments()
+    } catch (err) {
+        console.error('取消预约失败', err)
+        alert('操作失败')
     }
 }
 
 const formatDate = (dateStr) => {
+    if (!dateStr) return ''
     const date = new Date(dateStr)
     const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
     return `${date.getMonth() + 1}月${date.getDate()}日 ${weekdays[date.getDay()]}`
@@ -164,6 +137,7 @@ const getStatusText = (status) => {
 
 onMounted(() => {
     fetchAppointments()
+    fetchDepartmentsAndDoctors()
 })
 </script>
 
@@ -189,15 +163,15 @@ onMounted(() => {
 
       <div v-else class="appointments-container">
         <div class="tabs">
-          <button 
-            class="tab-btn" 
+          <button
+            class="tab-btn"
             :class="{ active: activeTab === 'patient' }"
             @click="activeTab = 'patient'"
           >
             我的预约
           </button>
-          <button 
-            class="tab-btn" 
+          <button
+            class="tab-btn"
             :class="{ active: activeTab === 'doctor' }"
             @click="activeTab = 'doctor'"
           >
@@ -213,9 +187,9 @@ onMounted(() => {
           </div>
 
           <div v-else class="appointments-list">
-            <div 
-              v-for="appointment in appointments.filter(a => a.source === 'patient')" 
-              :key="appointment.id" 
+            <div
+              v-for="appointment in appointments"
+              :key="appointment.id"
               class="appointment-card"
               :class="{ 'completed': appointment.status === 'completed' }"
             >
@@ -224,7 +198,7 @@ onMounted(() => {
                   <el-icon class="type-icon"><Calendar /></el-icon>
                   <span>患者预约</span>
                 </div>
-                <span 
+                <span
                   class="appointment-status"
                   :class="{
                     'status-pending': appointment.status === 'pending',
@@ -252,7 +226,7 @@ onMounted(() => {
                   <el-icon><Clock /></el-icon>
                   <span>{{ formatDate(appointment.date) }} {{ appointment.time }}</span>
                 </div>
-                
+
                 <div v-if="appointment.reason" class="appointment-reason">
                   <span class="reason-label">预约原因：</span>
                   <span>{{ appointment.reason }}</span>
@@ -275,9 +249,9 @@ onMounted(() => {
           </div>
 
           <div v-else class="appointments-list">
-            <div 
-              v-for="invitation in doctorInvitations" 
-              :key="invitation.id" 
+            <div
+              v-for="invitation in doctorInvitations"
+              :key="invitation.id"
               class="appointment-card doctor-invitation"
             >
               <div class="appointment-header">
@@ -285,7 +259,7 @@ onMounted(() => {
                   <el-icon class="type-icon"><User /></el-icon>
                   <span>医生邀请</span>
                 </div>
-                <span 
+                <span
                   class="appointment-status"
                   :class="{
                     'status-pending': invitation.status === 'pending',
@@ -312,7 +286,7 @@ onMounted(() => {
                   <el-icon><Clock /></el-icon>
                   <span>{{ formatDate(invitation.date) }} {{ invitation.time }}</span>
                 </div>
-                
+
                 <div v-if="invitation.reason" class="appointment-reason">
                   <span class="reason-label">邀请原因：</span>
                   <span>{{ invitation.reason }}</span>
@@ -350,18 +324,12 @@ onMounted(() => {
       :close-on-click-modal="false"
     >
       <el-form :model="form" label-width="80px">
-        <el-form-item label="科室">
-          <el-select v-model="form.department" placeholder="请选择科室" style="width: 100%">
-            <el-option v-for="dept in departments" :key="dept" :label="dept" :value="dept" />
-          </el-select>
-        </el-form-item>
-        
         <el-form-item label="医生">
-          <el-select v-model="form.doctor" placeholder="请选择医生" style="width: 100%" :disabled="!form.department">
-            <el-option v-for="doc in (doctors[form.department] || [])" :key="doc" :label="doc" :value="doc" />
+          <el-select v-model="form.doctorId" placeholder="请选择医生" style="width: 100%" @change="onDoctorChange">
+            <el-option v-for="doc in doctors" :key="doc.id" :label="`${doc.name} (${doc.department_name || doc.title || '医生'})`" :value="doc.id" />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="日期">
           <el-date-picker
             v-model="form.date"
@@ -372,7 +340,7 @@ onMounted(() => {
             style="width: 100%"
           />
         </el-form-item>
-        
+
         <el-form-item label="时间">
           <el-select v-model="form.time" placeholder="请选择时间" style="width: 100%">
             <el-option label="09:00" value="09:00" />
@@ -387,12 +355,12 @@ onMounted(() => {
             <el-option label="16:00" value="16:00" />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="预约原因">
           <el-input v-model="form.reason" type="textarea" placeholder="请输入预约原因（选填）" rows="3" />
         </el-form-item>
       </el-form>
-      
+
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleCreate" :loading="formLoading">确认创建</el-button>
@@ -790,7 +758,7 @@ onMounted(() => {
 }
 
 .tips-section li::before {
-    content: '•';
+    content: '\2022';
     position: absolute;
     left: 0;
     color: #4f8cff;
@@ -800,16 +768,16 @@ onMounted(() => {
     .page-header {
         padding: 12px 16px;
     }
-    
+
     .page-content {
         padding: 16px;
     }
-    
+
     .appointment-info {
         flex-direction: column;
         gap: 8px;
     }
-    
+
     .header-right {
         width: 60px;
     }

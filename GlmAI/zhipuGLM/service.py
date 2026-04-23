@@ -122,8 +122,9 @@ def initialize_service():
         else:
             print("  [WARNING] 智谱知识库不可用，将使用LLM自身知识")
         
-        # Step 4: 初始化会话管理器
+        # Step 4: 初始化会话管理器（从磁盘恢复持久化会话）
         print("\n[Step 4/5] 正在初始化会话管理器...")
+        session_mgr.session_manager.load_persisted_sessions()
         print("  [OK] 会话管理器就绪")
         
         # Step 5: 初始化伤口分析服务
@@ -408,7 +409,7 @@ def chat_stream(session_id: str, message: str, is_end: bool = False, image_base6
         if surgery_type:
             session.set_surgery_type(surgery_type)
 
-            response_text = prompts.SURGERY_CONFIRMED_PROMPT.format(
+            response_text = prompts.SURGERY_ASK_CONFIRM_PROMPT.format(
                 SurgeryType=surgery_type
             )
 
@@ -440,31 +441,48 @@ def chat_stream(session_id: str, message: str, is_end: bool = False, image_base6
     if session.status == session_mgr.SessionStatus.WAITING_SURGERY_CONFIRM:
         if is_surgery_confirmed(message):
             session.confirm_surgery()
-            
-            response_text = prompts.SURGERY_CONFIRMED_PROMPT.format(
-                SurgeryType=session.surgery_type
+
+            post_op_days = _get_post_op_days(session.surgery_date)
+            response_text = prompts.SURGERY_CONFIRM_DONE_PROMPT.format(
+                SurgeryType=session.surgery_type,
+                PostOpDays=post_op_days
             )
-            
+
             session.add_message("ai", response_text)
-            
+
             yield {
                 "content": response_text,
                 "is_final": False,
                 "reference": ""
             }
         else:
-            response_text = "好的，请告诉我您实际做的是什么手术？例如：阑尾切除手术、胆囊切除术等。"
-            session.status = session_mgr.SessionStatus.WAITING_SURGERY
-            session.surgery_type = None
-            
-            session.add_message("ai", response_text)
-            
-            yield {
-                "content": response_text,
-                "is_final": False,
-                "reference": ""
-            }
-        
+            # 用户未直接确认，尝试从消息中重新提取手术类型
+            surgery_type = extract_surgery_type(message)
+            if surgery_type:
+                session.set_surgery_type(surgery_type)
+                session.confirm_surgery()
+                # 手术类型匹配成功，直接进入 LLM 对话
+                yield from normal_chat_stream(session, message)
+                return
+            # 用户可能在直接描述症状（包含疼痛等关键词），直接确认手术并进入对话
+            symptoms = extract_symptoms(message)
+            if symptoms and session.surgery_type:
+                session.confirm_surgery()
+                yield from normal_chat_stream(session, message)
+                return
+            else:
+                response_text = "好的，请告诉我您实际做的是什么手术？例如：阑尾切除手术、胆囊切除术等。"
+                session.status = session_mgr.SessionStatus.WAITING_SURGERY
+                session.surgery_type = None
+
+                session.add_message("ai", response_text)
+
+                yield {
+                    "content": response_text,
+                    "is_final": False,
+                    "reference": ""
+                }
+
         yield {
             "content": "",
             "is_final": True,
@@ -481,18 +499,85 @@ def chat_stream(session_id: str, message: str, is_end: bool = False, image_base6
 
 def extract_surgery_type(text: str) -> Optional[str]:
     """从文本中提取手术类型"""
-    common_surgeries = [
-        "阑尾切除", "胆囊切除", "甲状腺切除", "乳腺手术",
-        "疝气修补", "子宫切除", "剖宫产", "关节置换",
-        "心脏搭桥", "骨折固定", "痔疮手术", "鼻窦手术"
+    # 手术类型映射表：常见说法 → 标准手术名称
+    surgery_aliases = [
+        ("阑尾炎", "阑尾切除手术"),
+        ("阑尾", "阑尾切除手术"),
+        ("胆囊", "胆囊切除手术"),
+        ("甲状腺", "甲状腺切除手术"),
+        ("乳腺", "乳腺手术"),
+        ("疝气", "疝气修补手术"),
+        ("疝", "疝气修补手术"),
+        ("子宫切除", "子宫切除手术"),
+        ("剖宫产", "剖宫产手术"),
+        ("剖腹产", "剖宫产手术"),
+        ("关节置换", "关节置换手术"),
+        ("心脏搭桥", "心脏搭桥手术"),
+        ("搭桥", "心脏搭桥手术"),
+        ("骨折", "骨折固定手术"),
+        ("痔疮", "痔疮手术"),
+        ("鼻窦", "鼻窦手术"),
+        ("肺切除", "肺切除手术"),
+        ("胃切除", "胃切除手术"),
+        ("胃大部", "胃切除手术"),
+        ("肠道手术", "肠道手术"),
+        ("前列腺", "前列腺手术"),
+        ("膀胱", "膀胱手术"),
+        ("肾脏切除", "肾脏切除手术"),
+        ("肾切除", "肾脏切除手术"),
+        ("脾切除", "脾切除手术"),
+        ("肝切除", "肝切除手术"),
+        ("胰腺", "胰腺手术"),
+        ("食管", "食管手术"),
+        ("白内障", "白内障手术"),
+        ("人工晶体", "白内障手术"),
+        ("扁桃体", "扁桃体手术"),
+        ("骨折内固定", "骨折内固定取出术"),
+        ("取钢钉", "骨折内固定取出术"),
+        ("取钢板", "骨折内固定取出术"),
+        ("静脉曲张", "静脉曲张手术"),
+        ("大隐静脉", "静脉曲张手术"),
+        ("肛瘘", "肛瘘手术"),
+        ("肛周", "肛周手术"),
     ]
-    
+
     text_lower = text.lower()
-    for surgery in common_surgeries:
-        if surgery in text or surgery.replace("手术", "") in text_lower:
-            return surgery + "手术"
-    
+    for alias, standard_name in surgery_aliases:
+        if alias in text or alias in text_lower:
+            return standard_name
+
+    # 通用手术关键词匹配：XX切除/XX修补/XX置换 等
+    import re
+    patterns = [
+        r"([一-鿿]{1,6})切除(?:术|手术)",
+        r"([一-鿿]{1,6})修补(?:术|手术)",
+        r"([一-鿿]{1,6})置换(?:术|手术)",
+        r"([一-鿿]{1,6})移植(?:术|手术)",
+        r"([一-鿿]{1,6})成形(?:术|手术)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(0) + "手术" if not match.group(0).endswith("手术") else match.group(0)
+
     return None
+
+
+def _get_post_op_days(surgery_date: Optional[str]) -> str:
+    """计算术后天数"""
+    if not surgery_date:
+        return "手术时间未知"
+    try:
+        from datetime import datetime
+        surgery = datetime.strptime(surgery_date, "%Y-%m-%d")
+        days = (datetime.now() - surgery).days
+        if days < 0:
+            return "手术时间有误"
+        if days == 0:
+            return "今天是手术当天"
+        return f"今天是术后第{days}天"
+    except (ValueError, TypeError):
+        return "手术时间未知"
 
 
 CONFIRM_KEYWORDS = ["对", "是", "对的", "是的", "没错", "正确", "确认", "没错", "嗯", "好的", "ok", "OK"]
@@ -516,7 +601,7 @@ def should_end_conversation(session) -> bool:
 
 
 def normal_chat_stream(session, message: str) -> Generator[dict, None, None]:
-    """正常对话流程 - 异步RAG + LLM并行 + 智能融合"""
+    """正常对话流程 - RAG + LLM 融合"""
 
     is_emergency, emergency_keywords = detect_emergency(message)
     detected_symptoms = extract_symptoms(message)
@@ -538,6 +623,7 @@ def normal_chat_stream(session, message: str) -> Generator[dict, None, None]:
         }
         return
 
+    # 异步 RAG 检索
     rag_result_container = {}
     rag_done_event = threading.Event()
 
@@ -559,22 +645,38 @@ def normal_chat_stream(session, message: str) -> Generator[dict, None, None]:
     rag_thread = threading.Thread(target=async_rag_retrieve, daemon=True)
     rag_thread.start()
 
+    # 等待 RAG 完成（最多 2s），然后注入 system prompt
+    rag_ready = rag_done_event.wait(timeout=2.0)
+    rag_context = ""
+    if rag_ready and rag_result_container.get("context"):
+        rag_context = prompts.RAG_SECTION.format(
+            retrieved_context=rag_result_container["context"]
+        )
+
     system_prompt = prompts.ENHANCED_CHAT_SYSTEM_PROMPT.format(
         surgery_type=session.surgery_type or "未知",
-        surgery_date=session.surgery_date
+        surgery_date=session.surgery_date,
+        rag_context=rag_context
     )
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": message}
     ]
+
+    # 追加最近对话历史，让 LLM 理解上下文
+    recent_history = session.conversation[-6:]  # 最近 6 条（约 3 轮问答）
+    for msg in recent_history:
+        role = "user" if msg.role == "patient" else "assistant"
+        messages.append({"role": role, "content": msg.content})
+
+    messages.append({"role": "user", "content": message})
 
     full_response = ""
     last_error = None
 
     for retry in range(MAX_RETRIES):
         try:
-            model_name = "glm-5" if retry == 0 else "glm-4-flash"
+            model_name = config.AI_PRIMARY_MODEL if retry == 0 else config.AI_FALLBACK_MODEL
             print(f"[DEBUG] LLM调用第{retry + 1}次, model={model_name}, max_tokens={config.MAX_TOKENS}")
             response = GLOBAL_CLIENT.chat.completions.create(
                 model=model_name,
@@ -626,40 +728,6 @@ def normal_chat_stream(session, message: str) -> Generator[dict, None, None]:
         "reference": "",
         "detected_symptoms": detected_symptoms
     }
-
-    rag_thread.join(timeout=2.0)
-
-    if rag_result_container.get("context") and rag_result_container.get("source") == "local_rag":
-        rag_context = rag_result_container["context"]
-        supplement_prompt = f"""基于以下术后护理文档，补充或验证之前的回答：
-
-【术后护理文档】
-{rag_context}
-
-请用1-2句话简洁地补充相关术后护理建议。"""
-
-        try:
-            supplement_response = GLOBAL_CLIENT.chat.completions.create(
-                model="glm-5",
-                messages=[
-                    {"role": "system", "content": "你是一位术后护理专家，请简洁补充。"},
-                    {"role": "user", "content": supplement_prompt}
-                ],
-                temperature=0.0,
-                max_tokens=200,
-                stream=False
-            )
-            supplement_text = supplement_response.choices[0].message.content
-            if supplement_text and len(supplement_text) > 10:
-                print(f"[INFO] RAG补充信息已生成: {supplement_text[:50]}...")
-                session.add_message("ai", supplement_text)
-                yield {
-                    "content": f"\n\n📋 【护理提示】{supplement_text}",
-                    "is_final": True,
-                    "reference": rag_context[:100]
-                }
-        except Exception as e:
-            print(f"[WARNING] RAG补充生成失败: {e}")
 
 
 def end_chat_stream(session) -> Generator[dict, None, None]:
@@ -715,7 +783,7 @@ def generate_medical_report(session) -> dict:
     for retry in range(MAX_RETRIES):
         try:
             response = GLOBAL_CLIENT.chat.completions.create(
-                model="glm-5",
+                model=config.AI_REPORT_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
                 max_tokens=config.MAX_TOKENS,

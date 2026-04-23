@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile, Request
 from pydantic import ValidationError
 import uuid
 import os
@@ -17,6 +17,8 @@ from app.utils import (
     success_response,
     error_response
 )
+from app.utils.rate_limiter import login_limiter, get_client_ip
+from app.utils.file_handler import _detect_image_type
 
 router = APIRouter(tags=["用户模块"])
 
@@ -25,6 +27,7 @@ router = APIRouter(tags=["用户模块"])
 async def register(
     phone_number: str = Form(..., min_length=11, max_length=11, description="手机号"),
     password: str = Form(..., min_length=6, max_length=72, description="密码，至少6位，最多72字节"),
+    request: Request = None,
     db = Depends(get_db)
 ):
     """用户注册
@@ -35,6 +38,10 @@ async def register(
     - phone_number: 手机号（11位，1开头）
     - password: 密码（至少6位）
     """
+    if request:
+        client_ip = get_client_ip(request)
+        if not login_limiter.check(f"register:{client_ip}"):
+            return error_response(code="10011", msg="操作过于频繁，请稍后再试")
     try:
         # 验证手机号格式
         import re
@@ -68,6 +75,7 @@ async def register(
 async def login(
     phone_number: str = Form(..., min_length=11, max_length=11, description="手机号"),
     password: str = Form(..., min_length=6, max_length=72, description="密码"),
+    request: Request = None,
     db = Depends(get_db)
 ):
     """用户登录
@@ -78,6 +86,10 @@ async def login(
     - phone_number: 手机号
     - password: 密码
     """
+    if request:
+        client_ip = get_client_ip(request)
+        if not login_limiter.check(f"login:{client_ip}"):
+            return error_response(code="10012", msg="登录尝试过于频繁，请稍后再试")
     # 验证手机号格式
     import re
     if not re.match(r'^1[3-9]\d{9}$', phone_number):
@@ -271,6 +283,7 @@ async def refresh_token(
 async def update_user_info(
     username: str = Form(None, description="用户名"),
     password: str = Form(None, min_length=6, max_length=72, description="密码，至少6位"),
+    current_password: str = Form(None, description="当前密码（修改密码时必填）"),
     avatar_url: str = Form(None, description="头像URL"),
     gender: str = Form(None, description="性别"),
     birth: str = Form(None, description="出生日期"),
@@ -293,11 +306,15 @@ async def update_user_info(
         return error_response(code="10004", msg="用户不存在")
 
     update_data = {}
-    
+
     if username:
         update_data["username"] = username
-    
+
     if password:
+        if not current_password:
+            return error_response(code="10009", msg="修改密码需要提供当前密码")
+        if not verify_password(current_password, user.password):
+            return error_response(code="10010", msg="当前密码不正确")
         update_data["password"] = get_password_hash(password)
     
     if avatar_url:
@@ -360,21 +377,20 @@ async def upload_avatar(
     if not user:
         return error_response(code="10004", msg="用户不存在")
 
-    if not file.content_type or not file.content_type.startswith("image/"):
-        return error_response(code="10007", msg="请上传图片文件")
-
-    allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
-    if file.content_type not in allowed_types:
-        return error_response(code="10007", msg="仅支持 JPG、PNG、GIF、WEBP 格式")
+    # 验证文件内容是否为图片（magic byte 校验）
+    content = await file.read()
+    detected_type = _detect_image_type(content)
+    if detected_type is None:
+        return error_response(code="10007", msg="无法识别的图片格式，请上传 JPG/PNG/GIF/WEBP 图片")
 
     upload_dir = "uploads/avatars"
     os.makedirs(upload_dir, exist_ok=True)
 
-    file_ext = file.filename.split(".")[-1] if file.filename and "." in file.filename else "jpg"
+    ext_map = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp"}
+    file_ext = ext_map.get(detected_type, "jpg")
     new_filename = f"{current_user['user_id']}_{datetime.now().strftime('%Y%m%d%H%M%S')}.{file_ext}"
     file_path = os.path.join(upload_dir, new_filename)
 
-    content = await file.read()
     with open(file_path, "wb") as f:
         f.write(content)
 

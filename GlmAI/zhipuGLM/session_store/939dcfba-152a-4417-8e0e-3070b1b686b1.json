@@ -1,0 +1,40 @@
+{
+  "session_id": "939dcfba-152a-4417-8e0e-3070b1b686b1",
+  "patient_id": "0d1c99c8-41a4-4da4-a9d9-39163885333b",
+  "patient_name": "默认用户",
+  "surgery_date": "",
+  "surgery_type": "阑尾切除手术",
+  "status": "ACTIVE",
+  "conversation": [
+    {
+      "role": "patient",
+      "content": "我发烧了",
+      "timestamp": "2026-04-23T21:37:30.647Z"
+    },
+    {
+      "role": "ai",
+      "content": "抱歉，我没有识别出您说的手术类型。请告诉我您做的是什么手术？例如：阑尾切除手术、胆囊切除术等。",
+      "timestamp": "2026-04-23T21:37:30.647Z"
+    },
+    {
+      "role": "patient",
+      "content": "阑尾炎切除手术",
+      "timestamp": "2026-04-23T21:37:42.760Z"
+    },
+    {
+      "role": "ai",
+      "content": "我了解到您做的是【阑尾切除手术】手术，对吗？\n请确认一下。",
+      "timestamp": "2026-04-23T21:37:42.761Z"
+    },
+    {
+      "role": "patient",
+      "content": "是的",
+      "timestamp": "2026-04-23T21:37:45.504Z"
+    }
+  ],
+  "created_at": "2026-04-23T21:37:19.077Z",
+  "ended_at": null,
+  "pending_image_analysis": null,
+  "uploaded_images": [],
+  "final_report": null
+}

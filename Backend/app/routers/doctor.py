@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, Form, Request
 from tortoise.exceptions import DoesNotExist
 import uuid
 from app.database_tortoise import get_db
@@ -16,6 +16,7 @@ from app.utils import (
     success_response,
     error_response
 )
+from app.utils.rate_limiter import login_limiter, get_client_ip
 
 router = APIRouter(tags=["医生模块"])
 
@@ -26,9 +27,15 @@ async def doctor_register(
     password: str = Form(..., description="密码"),
     username: str = Form(..., description="姓名"),
     department_id: str = Form(..., description="科室ID"),
+    request: Request = None,
     db = Depends(get_db)
 ):
     """医生注册"""
+    if request:
+        client_ip = get_client_ip(request)
+        if not login_limiter.check(f"doctor_register:{client_ip}"):
+            return error_response(code="30010", msg="操作过于频繁，请稍后再试")
+
     import re
     if not re.match(r'^1[3-9]\d{9}$', phone_number):
         return error_response(code="30001", msg="手机号格式不正确")
@@ -70,9 +77,15 @@ async def doctor_register(
 async def doctor_login(
     phone_number: str = Form(..., description="手机号"),
     password: str = Form(..., description="密码"),
+    request: Request = None,
     db = Depends(get_db)
 ):
     """医生登录"""
+    if request:
+        client_ip = get_client_ip(request)
+        if not login_limiter.check(f"doctor_login:{client_ip}"):
+            return error_response(code="30011", msg="登录尝试过于频繁，请稍后再试")
+
     doctor = await Doctor.filter(
         phone_number=phone_number,
         deleted_at__isnull=True

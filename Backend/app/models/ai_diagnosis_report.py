@@ -15,6 +15,7 @@ class AIDiagnosisReport(Model):
     suggestions = fields.TextField(description="建议")
     severity = fields.CharField(max_length=20, description="严重程度")
     report_status = fields.CharField(max_length=20, description="报告状态")
+    detail = fields.TextField(null=True, description="完整结构化报告JSON")
     doctor_id = fields.CharField(max_length=36, null=True, description="医生ID")
     created_at = fields.DatetimeField(auto_now_add=True, description="创建时间")
     reviewed_at = fields.DatetimeField(null=True, description="审核时间")

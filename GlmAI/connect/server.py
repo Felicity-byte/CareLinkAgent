@@ -378,6 +378,10 @@ def serve():
     """启动 gRPC 服务器"""
     port = 50053
     health_port = 50054
+
+    GRPC_SECURE = os.environ.get("GRPC_SECURE", "false").lower() == "true"
+    GRPC_SERVER_CERT = os.environ.get("GRPC_SERVER_CERT", "")
+    GRPC_SERVER_KEY = os.environ.get("GRPC_SERVER_KEY", "")
     
     print("\n" + "="*60)
     print("  术后随访AI服务启动器")
@@ -399,10 +403,23 @@ def serve():
         PostSurgeryFollowUpServicer(), server
     )
     
-    server.add_insecure_port(f"[::]:{port}")
-    
     print(f"  [OK] gRPC服务器配置完成，端口: {port}")
-    
+
+    if GRPC_SECURE:
+        if not GRPC_SERVER_CERT or not GRPC_SERVER_KEY:
+            print(f"  [ERROR] GRPC_SECURE=true 但缺少证书配置")
+            raise RuntimeError("Missing GRPC_SERVER_CERT or GRPC_SERVER_KEY")
+        with open(GRPC_SERVER_CERT, "rb") as f:
+            server_cert = f.read()
+        with open(GRPC_SERVER_KEY, "rb") as f:
+            server_key = f.read()
+        server_credentials = grpc.ssl_server_credentials([(server_key, server_cert)])
+        server.add_secure_port(f"[::]:{port}", server_credentials)
+        print(f"  [OK] 安全gRPC端口已绑定 (TLS): {port}")
+    else:
+        server.add_insecure_port(f"[::]:{port}")
+        print(f"  [WARNING] 非安全gRPC端口已绑定 (开发环境): {port}")
+
     server.start()
 
     # 启动 HTTP 健康检查服务
@@ -425,7 +442,7 @@ def serve():
         print(f"  [OK] 健康检查服务已启动: http://localhost:{health_port}")
     except Exception as e:
         print(f"  [WARNING] 健康检查服务启动失败: {e}")
-    
+
     print("\n" + "="*60)
     print(f"  AI服务启动成功!")
     print(f"  gRPC端口: {port}")

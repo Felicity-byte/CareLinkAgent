@@ -10,15 +10,21 @@ security = HTTPBearer()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    truncated_password = plain_password.encode('ascii', errors='ignore').decode('ascii')[:72]
-    return bcrypt.checkpw(truncated_password.encode('ascii'), hashed_password.encode('ascii'))
+    password_bytes = plain_password.encode("utf-8")
+    # Bcrypt only uses first 72 bytes
+    if len(password_bytes) > 72:
+        password_bytes = password_bytes[:72]
+    return bcrypt.checkpw(password_bytes, hashed_password.encode("ascii"))
 
 
 def get_password_hash(password: str) -> str:
-    truncated_password = password.encode('ascii', errors='ignore').decode('ascii')[:72]
+    password_bytes = password.encode("utf-8")
+    # Bcrypt only uses first 72 bytes
+    if len(password_bytes) > 72:
+        password_bytes = password_bytes[:72]
     salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(truncated_password.encode('ascii'), salt)
-    return hashed.decode('ascii')
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode("ascii")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

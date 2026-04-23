@@ -34,5 +34,12 @@ CHROMA_PERSIST_DIR = os.path.join(_MODULE_DIR, "chroma_db_medical")
 DEFAULT_IMAGE_PATH = os.path.join(_MODULE_DIR, "pic", "tongue_sample.png")
 
 # LLM 参数
-MAX_TOKENS = 512
+MAX_TOKENS = int(os.getenv("GLM_MAX_TOKENS", "512"))
 TEMPERATURE = 0.0
+
+# 模型名称配置（通过环境变量可覆盖，方便模型升级时切换）
+AI_PRIMARY_MODEL = os.getenv("AI_PRIMARY_MODEL", "glm-4.5-air")   # 首选模型
+AI_FALLBACK_MODEL = os.getenv("AI_FALLBACK_MODEL", "glm-4-flash") # 降级模型
+AI_VISION_MODEL = os.getenv("AI_VISION_MODEL", "glm-4v-flash")   # 视觉模型
+AI_SUPPLEMENT_MODEL = os.getenv("AI_SUPPLEMENT_MODEL", "glm-4.5-air")  # RAG补充模型
+AI_REPORT_MODEL = os.getenv("AI_REPORT_MODEL", "glm-4.5-air")          # 病历生成模型

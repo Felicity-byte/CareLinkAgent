@@ -1,0 +1,14 @@
+{
+  "session_id": "a2eb7f51-4851-4a39-bc9f-752a148840d7",
+  "patient_id": "784a6576-f155-4185-a288-920f444f8281",
+  "patient_name": "陈小明",
+  "surgery_date": "2026-04-15",
+  "surgery_type": "阑尾切除术",
+  "status": "WAITING_SURGERY_CONFIRM",
+  "conversation": [],
+  "created_at": "2026-04-23T22:37:35.772Z",
+  "ended_at": null,
+  "pending_image_analysis": null,
+  "uploaded_images": [],
+  "final_report": null
+}

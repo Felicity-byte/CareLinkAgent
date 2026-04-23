@@ -4,22 +4,19 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 import grpc
-import os
-import sys
 import json
+import os
+import asyncio
 from app.utils import success_response, error_response, get_current_user
+from app.grpc_client import get_grpc_stub
 from app.models.surgery_record import SurgeryRecord
 from app.models.ai_chat_session import AIChatSession, AIChatMessage
+from app.models.ai_diagnosis_report import AIDiagnosisReport
 
 router = APIRouter(tags=["AI导诊服务"])
 
-AI_SERVICE_HOST = os.getenv("AI_SERVICE_HOST", "127.0.0.1:50053")
-GRPC_CONNECT_TIMEOUT = float(os.getenv("AI_GRPC_CONNECT_TIMEOUT", "3"))
 GRPC_CHAT_TIMEOUT = float(os.getenv("AI_GRPC_CHAT_TIMEOUT", "90"))
 GRPC_DEFAULT_TIMEOUT = float(os.getenv("AI_GRPC_DEFAULT_TIMEOUT", "20"))
-_grpc_stub = None
-_grpc_channel = None
-_medical_ai_pb2 = None
 
 
 class CreateSessionRequest(BaseModel):
@@ -39,45 +36,6 @@ class ChatRequest(BaseModel):
 
 class EndSessionRequest(BaseModel):
     session_id: str
-
-
-class GetHistoryRequest(BaseModel):
-    session_id: str
-
-
-def get_grpc_stub():
-    """获取 gRPC 客户端"""
-    global _grpc_stub, _grpc_channel, _medical_ai_pb2
-    try:
-        if _grpc_stub and _grpc_channel:
-            return _grpc_stub, _grpc_channel, _medical_ai_pb2
-
-        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        project_root = os.path.dirname(backend_dir)
-        connect_dir = os.path.join(project_root, "GlmAI", "connect")
-        if connect_dir not in sys.path:
-            sys.path.insert(0, connect_dir)
-        
-        import medical_ai_pb2
-        import medical_ai_pb2_grpc
-        
-        _grpc_channel = grpc.insecure_channel(
-            AI_SERVICE_HOST,
-            options=[
-                ("grpc.keepalive_time_ms", 30000),
-                ("grpc.keepalive_timeout_ms", 10000),
-                ("grpc.http2.max_pings_without_data", 0),
-            ],
-        )
-        grpc.channel_ready_future(_grpc_channel).result(timeout=GRPC_CONNECT_TIMEOUT)
-        _grpc_stub = medical_ai_pb2_grpc.PostSurgeryFollowUpServiceStub(_grpc_channel)
-        _medical_ai_pb2 = medical_ai_pb2
-        return _grpc_stub, _grpc_channel, _medical_ai_pb2
-    except Exception as e:
-        print(f"[ERROR] 连接 AI 服务失败: {e}")
-        import traceback
-        traceback.print_exc()
-        return None, None, None
 
 
 @router.post("/create-session")
@@ -139,7 +97,7 @@ async def create_session(request: CreateSessionRequest):
         welcome_message = response.welcome_message
         if surgery_name:
             welcome_message = f"{response.welcome_message}\n\n我了解到您做了【{surgery_name}】手术，\n请您确认一下是这样吗？"
-        
+
         return success_response(data={
             "session_id": response.session_id,
             "created_at": response.created_at,
@@ -162,19 +120,6 @@ async def chat_stream(request: ChatRequest):
     if not stub:
         return error_response(code="50001", msg="AI服务连接失败")
 
-    try:
-        await AIChatMessage.create(
-            session_id=request.session_id,
-            role="user",
-            content=request.message
-        )
-        session = await AIChatSession.filter(id=request.session_id).first()
-        if session:
-            session.message_count += 1
-            await session.save()
-    except Exception as e:
-        print(f"[WARNING] 保存用户消息失败: {e}")
-
     async def event_generator():
         full_content = ""
         try:
@@ -185,36 +130,66 @@ async def chat_stream(request: ChatRequest):
                     is_end=request.is_end
                 )
 
-            for response in stub.Chat(request_generator(), timeout=GRPC_CHAT_TIMEOUT):
-                chunk = {
-                    "content": response.content,
-                    "is_final": response.is_final,
-                    "reference": response.reference
-                }
-                full_content += response.content
-                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-                if response.is_final:
+            # 将同步 gRPC 流转换为 async queue 以支持心跳
+            queue = asyncio.Queue()
+            stream_done = asyncio.Event()
+
+            def grpc_stream_worker():
+                try:
+                    for response in stub.Chat(request_generator(), timeout=GRPC_CHAT_TIMEOUT):
+                        queue.put_nowait(response)
+                        if response.is_final:
+                            break
+                except Exception as e:
+                    queue.put_nowait(e)
+                finally:
+                    stream_done.set()
+
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(None, grpc_stream_worker)
+
+            while True:
+                get_task = asyncio.create_task(queue.get())
+                heartbeat_task = asyncio.create_task(asyncio.sleep(15))
+
+                done, _ = await asyncio.wait(
+                    [get_task, heartbeat_task],
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+
+                if heartbeat_task in done:
+                    yield "data: {\"type\": \"ping\"}\n\n"
+                    continue
+
+                item = await get_task
+
+                if isinstance(item, grpc.RpcError):
+                    error_msg = item.details() or "gRPC 调用失败"
+                    error_chunk = {"error": error_msg.replace("\n", " ").replace("\r", " ")}
+                    yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
+                    break
+                elif isinstance(item, Exception):
+                    error_msg = str(item)
+                    error_chunk = {"error": error_msg.replace("\n", " ").replace("\r", " ")}
+                    yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
                     break
 
-            if full_content:
-                try:
-                    await AIChatMessage.create(
-                        session_id=request.session_id,
-                        role="ai",
-                        content=full_content
-                    )
-                    session = await AIChatSession.filter(id=request.session_id).first()
-                    if session:
-                        session.message_count += 1
-                        await session.save()
-                except Exception as e:
-                    print(f"[WARNING] 保存AI消息失败: {e}")
+                chunk = {
+                    "content": item.content,
+                    "is_final": item.is_final,
+                    "reference": item.reference
+                }
+                full_content += item.content
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
 
-        except grpc.RpcError as e:
-            error_chunk = {"error": f"gRPC调用失败: {e.details()}"}
-            yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
+                if item.is_final:
+                    break
+
+            await stream_done.wait()
+
         except Exception as e:
-            error_chunk = {"error": f"发送消息失败: {str(e)}"}
+            error_msg = str(e).replace("\n", " ").replace("\r", " ")
+            error_chunk = {"error": f"发送消息失败: {error_msg}"}
             yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -283,6 +258,27 @@ async def end_session(request: EndSessionRequest):
         return error_response(code="50001", msg="AI服务连接失败")
     
     try:
+        # 先获取完整对话历史并保存到数据库
+        try:
+            history_resp = stub.GetSessionHistory(
+                pb2.GetSessionHistoryRequest(session_id=request.session_id),
+                timeout=GRPC_DEFAULT_TIMEOUT
+            )
+            msg_count = 0
+            for msg in history_resp.messages:
+                await AIChatMessage.create(
+                    session_id=request.session_id,
+                    role=msg.role,
+                    content=msg.content
+                )
+                msg_count += 1
+            db_session = await AIChatSession.filter(id=request.session_id).first()
+            if db_session and msg_count > 0:
+                db_session.message_count = msg_count
+                await db_session.save()
+        except Exception as e:
+            print(f"[WARNING] 保存对话历史到数据库失败: {e}")
+
         response = stub.EndSession(
             pb2.EndSessionRequest(session_id=request.session_id),
             timeout=GRPC_DEFAULT_TIMEOUT
@@ -329,6 +325,28 @@ async def end_session(request: EndSessionRequest):
                 }
             }
         
+        # 更新会话状态为已完成，并保存病历
+        try:
+            db_session = await AIChatSession.filter(id=request.session_id).first()
+            if db_session:
+                db_session.status = "completed"
+                await db_session.save()
+
+            if report and db_session:
+                await AIDiagnosisReport.create(
+                    patient_id=db_session.user_id,
+                    chat_id=request.session_id,
+                    chief_complaint=report.get("chief_complaint", ""),
+                    symptoms=json.dumps(report.get("present_illness", ""), ensure_ascii=False),
+                    possible_diagnosis=report.get("ai_analysis", {}).get("health_advice", ""),
+                    suggestions=report.get("doctor_advice", {}).get("medical_advice", ""),
+                    severity="紧急" if report.get("ai_analysis", {}).get("alert_flag") else "普通",
+                    report_status="completed",
+                    detail=json.dumps(report, ensure_ascii=False)
+                )
+        except Exception as e:
+            print(f"[WARNING] 保存会话状态/病历失败: {e}")
+
         return success_response(data={
             "report": report,
             "status": response.status
@@ -340,149 +358,3 @@ async def end_session(request: EndSessionRequest):
         return error_response(code="50004", msg=f"结束会话失败: {str(e)}")
 
 
-@router.post("/history")
-async def get_history(request: GetHistoryRequest):
-    """获取对话历史"""
-    stub, channel, pb2 = get_grpc_stub()
-    
-    if not stub:
-        return error_response(code="50001", msg="AI服务连接失败")
-    
-    try:
-        response = stub.GetSessionHistory(
-            pb2.GetSessionHistoryRequest(session_id=request.session_id),
-            timeout=GRPC_DEFAULT_TIMEOUT
-        )
-        
-        messages = []
-        for msg in response.messages:
-            messages.append({
-                "role": msg.role,
-                "content": msg.content,
-                "timestamp": msg.timestamp
-            })
-        
-        return success_response(data={
-            "session_id": response.session_id,
-            "surgery_type": response.surgery_type,
-            "messages": messages,
-            "created_at": response.created_at,
-            "ended_at": response.ended_at,
-            "status": response.status
-        })
-        
-    except grpc.RpcError as e:
-        return error_response(code="50003", msg=f"gRPC调用失败: {e.details()}")
-    except Exception as e:
-        return error_response(code="50004", msg=f"获取历史失败: {str(e)}")
-
-
-@router.get("/sessions")
-async def get_user_sessions(
-    current_user: dict = Depends(get_current_user),
-    page: int = 1,
-    page_size: int = 20
-):
-    """获取用户的AI问诊会话列表"""
-    user_id = current_user["user_id"]
-    
-    try:
-        sessions = await AIChatSession.filter(
-            user_id=user_id
-        ).order_by("-updated_at").offset((page - 1) * page_size).limit(page_size)
-        
-        total = await AIChatSession.filter(user_id=user_id).count()
-        
-        session_list = []
-        for session in sessions:
-            session_list.append({
-                "id": session.id,
-                "title": session.title,
-                "surgery_type": session.surgery_type,
-                "message_count": session.message_count,
-                "status": session.status,
-                "created_at": session.created_at.strftime("%Y-%m-%d %H:%M:%S") if session.created_at else None,
-                "updated_at": session.updated_at.strftime("%Y-%m-%d %H:%M:%S") if session.updated_at else None
-            })
-        
-        return success_response(data={
-            "sessions": session_list,
-            "total": total,
-            "page": page,
-            "page_size": page_size
-        })
-    except Exception as e:
-        print(f"[ERROR] 获取会话列表失败: {e}")
-        return error_response(code="50006", msg=f"获取会话列表失败: {str(e)}")
-
-
-@router.get("/sessions/{session_id}")
-async def get_session_detail(
-    session_id: str,
-    current_user: dict = Depends(get_current_user)
-):
-    """获取会话详情（包含所有消息）"""
-    user_id = current_user["user_id"]
-    
-    try:
-        session = await AIChatSession.filter(
-            id=session_id,
-            user_id=user_id
-        ).first()
-        
-        if not session:
-            return error_response(code="50007", msg="会话不存在")
-        
-        messages = await AIChatMessage.filter(
-            session_id=session_id
-        ).order_by("created_at").all()
-        
-        message_list = []
-        for msg in messages:
-            message_list.append({
-                "id": msg.id,
-                "role": msg.role,
-                "content": msg.content,
-                "time": msg.created_at.strftime("%H:%M") if msg.created_at else ""
-            })
-        
-        return success_response(data={
-            "session": {
-                "id": session.id,
-                "title": session.title,
-                "surgery_type": session.surgery_type,
-                "message_count": session.message_count,
-                "status": session.status,
-                "created_at": session.created_at.strftime("%Y-%m-%d %H:%M:%S") if session.created_at else None
-            },
-            "messages": message_list
-        })
-    except Exception as e:
-        print(f"[ERROR] 获取会话详情失败: {e}")
-        return error_response(code="50008", msg=f"获取会话详情失败: {str(e)}")
-
-
-@router.delete("/sessions/{session_id}")
-async def delete_session(
-    session_id: str,
-    current_user: dict = Depends(get_current_user)
-):
-    """删除会话"""
-    user_id = current_user["user_id"]
-    
-    try:
-        session = await AIChatSession.filter(
-            id=session_id,
-            user_id=user_id
-        ).first()
-        
-        if not session:
-            return error_response(code="50007", msg="会话不存在")
-        
-        await AIChatMessage.filter(session_id=session_id).delete()
-        await session.delete()
-        
-        return success_response(msg="删除成功")
-    except Exception as e:
-        print(f"[ERROR] 删除会话失败: {e}")
-        return error_response(code="50009", msg=f"删除会话失败: {str(e)}")

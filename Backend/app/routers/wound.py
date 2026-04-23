@@ -3,19 +3,14 @@ from pydantic import BaseModel
 from typing import Optional
 import base64
 import json
-import grpc
 import os
+import grpc
 from app.utils import success_response, error_response
+from app.grpc_client import get_grpc_stub
 
 router = APIRouter(tags=["伤口分析模块"])
 
-# gRPC 客户端配置（与 server.py 保持一致）
-AI_SERVICE_HOST = os.getenv("AI_SERVICE_HOST", "127.0.0.1:50053")
-GRPC_CONNECT_TIMEOUT = float(os.getenv("AI_GRPC_CONNECT_TIMEOUT", "3"))
 GRPC_DEFAULT_TIMEOUT = float(os.getenv("AI_GRPC_DEFAULT_TIMEOUT", "25"))
-_grpc_stub = None
-_grpc_channel = None
-_medical_ai_pb2 = None
 
 
 class AnalyzeWoundImageRequest(BaseModel):
@@ -26,40 +21,6 @@ class AnalyzeWoundImageRequest(BaseModel):
 class ProcessPatientAnswersRequest(BaseModel):
     session_id: str
     answers: dict
-
-
-def get_grpc_stub():
-    """获取 gRPC 客户端"""
-    global _grpc_stub, _grpc_channel, _medical_ai_pb2
-    try:
-        if _grpc_stub and _grpc_channel and _medical_ai_pb2:
-            return _grpc_stub, _grpc_channel, _medical_ai_pb2
-
-        import sys
-        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        project_root = os.path.dirname(backend_dir)
-        connect_dir = os.path.join(project_root, "GlmAI", "connect")
-        if connect_dir not in sys.path:
-            sys.path.insert(0, connect_dir)
-        
-        import medical_ai_pb2
-        import medical_ai_pb2_grpc
-        
-        _grpc_channel = grpc.insecure_channel(
-            AI_SERVICE_HOST,
-            options=[
-                ("grpc.keepalive_time_ms", 30000),
-                ("grpc.keepalive_timeout_ms", 10000),
-                ("grpc.http2.max_pings_without_data", 0),
-            ],
-        )
-        grpc.channel_ready_future(_grpc_channel).result(timeout=GRPC_CONNECT_TIMEOUT)
-        _grpc_stub = medical_ai_pb2_grpc.PostSurgeryFollowUpServiceStub(_grpc_channel)
-        _medical_ai_pb2 = medical_ai_pb2
-        return _grpc_stub, _grpc_channel, _medical_ai_pb2
-    except Exception as e:
-        print(f"[ERROR] 连接 AI 服务失败: {e}")
-        return None, None, None
 
 
 @router.post("/analyze")
